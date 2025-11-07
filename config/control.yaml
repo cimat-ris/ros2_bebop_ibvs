@@ -1,0 +1,9 @@
+img_depth: 1.
+K: [1., 0., 1., 0., 1., 1., 0., 0., 1.]
+frequency: 100.
+robot_name: "bebop1"
+takeoff_threshold: 0.05
+landing_threshold: 0.03
+hover_height: 1.5
+gain: .01
+gain_takeoff: .5
