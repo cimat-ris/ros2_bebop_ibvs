@@ -124,7 +124,7 @@ class Controller(Node):
         self.R_cam = np.array([[0.,  0., 1.],
                                [-1., 0., 0.],
                                [0., -1., 0.]])
-        self.t_cam = np.array([0.09, 0., 0.])
+        self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
 
         # Publicadores
         qos = QoSProfile(depth=10)

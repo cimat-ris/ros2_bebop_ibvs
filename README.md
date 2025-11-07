@@ -1,6 +1,6 @@
 # Requirements
 
-## Installing ROS Rolling on ubuntu 24.04
+## Installing ROS Rolling on ubuntu 24.04 LTS (Noble Numbat)
 
 Set locale
 ```bash
@@ -48,14 +48,18 @@ sudo apt-get update
 sudo apt-get install gz-jetty  ros-rolling-ros-gz-bridge  ros-rolling-ros-gz-sim
 ```
 
-Install opencv
+Install opencv from source (version 4.x):
+<https://docs.opencv.org/4.12.0/d0/d3d/tutorial_general_install.html>
+
+`/usr/local` address wil be used, if reuired, change ir at cmake config:
 ```bash
-# Download to a known path
-mkdir  ~/src/
-cd ~/src/
+# In some known directory oustide of any conflicting directories
+mkdir  src/
+cd src/
 git clone https://github.com/opencv/opencv
 git -C opencv checkout 4.x
 
+# optionally
 git clone https://github.com/opencv/opencv_contrib
 git -C opencv_contrib checkout 4.x
 
@@ -63,13 +67,15 @@ mkdir build
 cd build
 
 cmake ../opencv
+# Configure cmake:
 # Any other needed changes can be done with the following command
 cmake -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules ../opencv
-# make
-make -j$(nproc)
 
-# Install
-# Usually installs to  /usr/local
+#   build: (can be made in parallel using -j )
+make
+# make -j$(nproc)
+
+#   Install
 sudo make install
 ```
 
@@ -86,39 +92,9 @@ sudo apt-get install python3-rosinstall-generator \
     ros-rolling-rqt-common-plugins
 ```
 
-##  Install OpenCV:
+# Installation
 
-Install openCV from source (version 4.x):
-<https://docs.opencv.org/4.12.0/d0/d3d/tutorial_general_install.html>
-
-`/usr/local` address wil be used, if reuired, change ir at cmake config:
-```bash
-# In some known directory oustide of any conflicting directories
-mkdir  src/
-cd src/
-git clone https://github.com/opencv/opencv
-git -C opencv checkout 4.x
-
-# optionally
-git clone https://github.com/opencv/opencv_contrib
-git -C opencv_contrib checkout 4.x
-
-# optionally
-git clone https://github.com/opencv/opencv_extra
-git -C opencv_extra checkout 4.x
-
-mkdir build
-cd build
-cmake ../opencv
-
-# Configure cmake:
-cmake -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules ../opencv
-make
-sudo make install
-```
-
-
-## Create a catkin workspace
+## Create a catkin workspace (if using a new one)
 
 Create a workspace in a meaningfull directory
 ```bash
@@ -126,15 +102,13 @@ mkdir -p ~/ws_bebop/src
 cd ws_bebop/src
 ```
 
-# Installation
-
 Clone the package into your catkin workspace (in src folder): 
 ```bash
 cd
 cd ws_bebop
-git clone  https://github.com/ src/ # TODO
+git clone https://github.com/cimat-ris/ros2_bebop_ibvs.git src/
 # For off line development
-# git fork https://github.com/ src/ # TODO
+# git fork https://github.com/cimat-ris/ros2_bebop_ibvs.git src/
 ```
 
 Compile
@@ -143,10 +117,10 @@ colcon build
 # Don't forget to reload the environment
 source ~/ws_bebop/install/setup.bash
 ```
-Environment variables
 
+Environment variables (have to be defined for each session)
 ```bash
-export GZ_SIM_RESOURCE_PATH="$HOME/ws_bebop/src/ros2_bebop_ibvs/worlds:$HOME/ws_bebop/src/ros/models"
+export GZ_SIM_RESOURCE_PATH="$HOME/ws_bebop/src/ros2_bebop_ibvs/worlds:$HOME/ws_bebop/src/ros/models:"
 export GZ_VERSION=jetty
 ```
 
@@ -164,23 +138,11 @@ ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
 ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
 ```
 
-<!-- END my ibvs  -->
+For simplicity the following aliases can be defined
+```bash
+alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TAKEOFF
+alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
+alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
+alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
+```
 
-
-### bebop_demo
-Contains utility packages and demonstration setups:
-- `set_pose`: Sets initial drone positions
-- `setpoint`: Generates circular trajectories for single drone operation
-- Various executable examples
-
-### bebop_gui
-Contains graphical user interfaces for the different demos.
-
-### bebop_gz
-Gazebo-specific components including:
-- Drone models and plugins
-- Simulation worlds
-- A configurable world generator that adapts to N agents
-
-### bebop_ros_gz
-Integrates all Gazebo packages into a single project. This meta-package provides the complete interface for using ROS 2 with Gazebo simulation.

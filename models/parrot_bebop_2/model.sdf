@@ -91,7 +91,7 @@
 
 
       <sensor name="rgb_camera_sensor" type="camera">
-        <pose relative_to='base_link'>0.113 0 0 0 0 0</pose>
+        <pose relative_to='base_link'>0.12 0 0 0 0 0</pose>
          <always_on>true</always_on>
   <visualize>true</visualize>
   <update_rate>30</update_rate>
@@ -99,15 +99,15 @@
   <gz_frame_id>camera_rgb_frame</gz_frame_id>
   <camera name="front">
     <camera_info_topic>camera/camera_info</camera_info_topic>
-          <horizontal_fov>1.2</horizontal_fov>
+          <horizontal_fov>1.7</horizontal_fov>
           <image>
-            <width>640</width>
+            <width>856</width>
             <height>480</height>
             <format>R8G8B8</format>
           </image>
           <clip>
-            <near>0.1</near>
-            <far>20</far>
+            <near>0.02</near>
+            <far>50</far>
           </clip>
           <lens>
             <!-- type element is mandatory -->
