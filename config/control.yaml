@@ -9,3 +9,4 @@ landing_threshold: 0.03
 hover_height: 1.5
 gain: .1
 gain_takeoff: .5
+output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output

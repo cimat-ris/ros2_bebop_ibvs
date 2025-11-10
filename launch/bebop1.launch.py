@@ -63,6 +63,11 @@ def generate_launch_description():
     if not os.path.exists(config["ref_image"]):
         print(f"Camara reference {config["ref_image"]} does not exists")
         return
+
+    if not os.path.exists(config["output"]):
+        print(f"Output directory  {config["output"]} does not exists")
+        return
+
     controller = Node(
             package='ros2_bebop_ibvs',
             executable='ibvs',
