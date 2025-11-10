@@ -318,7 +318,7 @@ def plot(directory, state):
     labels = ["X","Y","Z","Yaw"]
     fig_p, ax_p = plt.subplots(nrows = 1, figsize=(5,5))
     fig_p.suptitle("State")
-    symbols = plot_time(ax_p, time,velocities)
+    symbols = plot_time(ax_p, time,positions)
     ax_p.legend(symbols,labels, loc=1)
     # ax_p.set_ylim((-0.06,0.06))
     # plt.show()
@@ -364,7 +364,7 @@ def read_data(directory):
 
     with open(name, 'rb') as fileH:
         #   header
-        size = d*9 + _i
+        size = d*9 + 8
         rows = (length) / size
         # print("rows = ",rows)
         rows = int(np.floor(rows))
@@ -377,7 +377,7 @@ def read_data(directory):
                                 count = 1)
             time = time[0]
             idx = np.fromfile(fileH,
-                                dtype = np.int32,
+                                dtype = np.int64,
                                 count = 1)
             idx = idx[0]
             print(idx)
@@ -403,7 +403,7 @@ def read_data(directory):
 
     with open(name, 'rb') as fileH:
         #   header
-        size = 9*d + _i
+        size = 9*d + 8
         rows = (length) / size
         # print("rows = ",rows)
         rows = int(np.floor(rows))
@@ -417,7 +417,7 @@ def read_data(directory):
                                 count = 1)
             time = time[0]
             idx = np.fromfile(fileH,
-                                dtype = np.int32,
+                                dtype = np.int64,
                                 count = 1)
             idx = idx[0]
             _error = np.fromfile(fileH,

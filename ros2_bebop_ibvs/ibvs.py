@@ -229,7 +229,7 @@ class Controller(Node):
                 idx = self._ids_ref.index(ids[0,i])
                 _p = np.concatenate ((_p, corners[i].reshape(-1 )))
                 _p_ref = np.concatenate ((_p_ref, self.corners_ref[idx].reshape(-1) ))
-                self.ids.append(i)
+                self.ids.append(ids[0,i])
 
         if _p.shape[0] == 0:
             self.get_logger().warning(f"Matching Failed {self._ids_ref} {ids.tolist()}")
@@ -379,47 +379,38 @@ class Controller(Node):
             orientation_q = self.current_pose.orientation
             ang = get_yaw(orientation_q)
             with open(self.data_d, 'ab') as f:
-                binary_float = struct.pack('d', t)
-                f.write(binary_float)
 
-                pose = (self.current_pose.position.x,
+                data = (t, self.current_pose.position.x,
                         self.current_pose.position.y,
                         self.current_pose.position.z,
                         ang)
+                # print("len (data) = ", len(data))
+                data += tuple(self.u[[0,1,2,5]].reshape(-1))
+                # print("len (data) = ", len(data))
+                data += (np.linalg.norm(self.error),)
+                # print("np.linalg.norm(self.error) = ", np.linalg.norm(self.error))
+                # print("np.linalg.norm(self.error) = ", (np.linalg.norm(self.error)))
 
-                binary_float = struct.pack(4*'d', *pose)
-                f.write(binary_float)
-
-                _tmp = tuple(self.u[[0,1,2,5]])
-                binary_float = struct.pack(4*'d', *_tmp)
-                f.write(binary_float)
-
-                binary_float = struct.pack('d', np.linalg.norm(self.error))
-                f.write(binary_float)
+                # print("len (data) = ", len(data))
+                # print("data", data)
+                binary = struct.pack('dddddddddd', *data)
+                f.write(binary)
 
             with open(self.arucos_d, 'ab') as f:
                 for i in range(len(self.ids)):
-                    binary_float = struct.pack('d', t)
-                    f.write(binary_float)
 
-                    binary_float = struct.pack('i', self.ids[i])
-                    f.write(binary_float)
-
-                    _tmp = tuple(self.p[i:i+4, :].reshape(-1))
-                    binary_float = struct.pack(8*'d', *_tmp)
-                    f.write(binary_float)
+                    data = (t, self.ids[i])
+                    data += tuple(self.p[i:i+4, :].reshape(-1))
+                    binary = struct.pack('didddddddd', *data)
+                    f.write(binary)
 
             with open(self.error_d, 'ab') as f:
                 for i in range(len(self.ids)):
-                    binary_float = struct.pack('d', t)
-                    f.write(binary_float)
 
-                    binary_float = struct.pack('i', self.ids[i])
-                    f.write(binary_float)
-
-                    _tmp = tuple(self.error[i:i+8].reshape(-1))
-                    binary_float = struct.pack(8*'d', *_tmp)
-                    f.write(binary_float)
+                    data = (t, self.ids[i])
+                    data += tuple(self.error[i:i+8].reshape(-1))
+                    binary = struct.pack('didddddddd', *data)
+                    f.write(binary)
 
 
             #   Change state
