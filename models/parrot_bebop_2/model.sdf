@@ -61,33 +61,6 @@
         </geometry>
       </visual>      
 
-      <sensor name='multiranger' type='gpu_lidar'>"
-        <pose relative_to='base_link'>0 0 0.1 0 0 0</pose>
-        <update_rate>10</update_rate>
-        <ray>
-          <scan>
-            <horizontal>
-                <samples>4</samples>
-                <resolution>1</resolution>
-                <min_angle>-3.14</min_angle>
-                <max_angle>1.57</max_angle>
-            </horizontal>
-            <vertical>
-                <samples>1</samples>
-                <resolution>0.01</resolution>
-                <min_angle>0</min_angle>
-                <max_angle>0</max_angle>
-            </vertical>
-          </scan>
-          <range>
-            <min>0.01</min>
-            <max>3.49</max>
-            <resolution>0.01</resolution>
-          </range>
-        </ray>
-        <always_on>1</always_on>
-        <visualize>true</visualize>
-      </sensor>
 
 
       <sensor name="rgb_camera_sensor" type="camera">
@@ -254,19 +227,19 @@
 
 
 
-            <plugin name="gz::sim::systems::PosePublisher" filename="gz-sim-pose-publisher-system">
-              <publish_model_pose>true</publish_model_pose>
-              <use_pose_vector_msg>false</use_pose_vector_msg>
-              <publish_link_pose>false
-              </publish_link_pose>
-<publish_visual_pose>false
-</publish_visual_pose>
-<publish_collision_pose>false
-</publish_collision_pose>
-<publish_sensor_pose>false
-</publish_sensor_pose>
-<publish_nested_model_pose>false
-</publish_nested_model_pose>
+        <plugin name="gz::sim::systems::PosePublisher" filename="gz-sim-pose-publisher-system">
+            <publish_model_pose>true</publish_model_pose>
+            <use_pose_vector_msg>false</use_pose_vector_msg>
+            <publish_link_pose>false
+            </publish_link_pose>
+            <publish_visual_pose>false
+            </publish_visual_pose>
+            <publish_collision_pose>false
+            </publish_collision_pose>
+            <publish_sensor_pose>false
+            </publish_sensor_pose>
+            <publish_nested_model_pose>false
+            </publish_nested_model_pose>
       </plugin>
 
 
@@ -381,6 +354,5 @@
           </rotor>
         </rotorConfiguration>
       </plugin>
-
   </model>
 </sdf>

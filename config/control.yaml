@@ -2,11 +2,13 @@ img_depth: .5
 K: [537.292878, 0.000000, 427.331854,
     0.000000, 527.000348, 240.226888,
     0.000000, 0.000000, 1.000000]
+# p0: [0., 0.,1., 1.5708] #   reference 1 aruco
+p0: [0., -1.,1., 1.5708] #   ony z_cam
 frequency: 100.
 robot_name: "bebop1"
 takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
-gain: .1
+gain: 5.
 gain_takeoff: .5
 output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output

@@ -380,7 +380,7 @@ def read_data(directory):
                                 dtype = np.int64,
                                 count = 1)
             idx = idx[0]
-            print(idx)
+            # print(idx)
             aruco = np.fromfile(fileH,
                                 dtype = np.float64,
                                 count = 8)
@@ -471,12 +471,12 @@ def plot3D(directory, state, pd):
     pos_array = np.zeros((6,state.shape[1]))
     pos_array[[0,1,2,5],:] = state[1:5,:]
     pos_array[3,:] = pi/2.
-    x_min = min(x_min, init[0], end[0])
-    x_max = max(x_max, init[0], end[0])
-    y_min = min(y_min, init[1], end[1])
-    y_max = max(y_max, init[1], end[1])
-    z_min = min(z_min, init[2], end[2])
-    z_max = max(z_max, init[2], end[2])
+    x_min = min(x_min, init[0], end[0], pd[0])
+    x_max = max(x_max, init[0], end[0], pd[0])
+    y_min = min(y_min, init[1], end[1], pd[1])
+    y_max = max(y_max, init[1], end[1], pd[1])
+    z_min = min(z_min, init[2], end[2], pd[2])
+    z_max = max(z_max, init[2], end[2], pd[2])
 
     plot_3Dcam(ax,
                 pos_array,
@@ -512,7 +512,7 @@ def plot3D(directory, state, pd):
     
 def main(arg):
 
-    pd = np.array([1.,0.3,1.,pi/2., 0., pi/2. ])
+    pd = np.array([-1.,-.7,1.,pi/2., 0., pi/2. ])
 
     if len(arg) < 3:
         print("USE:\n$ python3 [DIRECTORY] [REFERENCE] [MARKERS]")

@@ -132,10 +132,13 @@ export GZ_VERSION=jetty
 # screen 1
 ros2 launch ros2_bebop_ibvs bebop1.launch.py
 # screen 2
+ros2 rqt_image_view rqt_image_view
+# screen 3
 ros2 topic pub  /state std_msgs/Int32 "{data: 2}" --once #  TAKEOFF
 ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
 ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
 ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
+ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
 ```
 
 For simplicity the following aliases can be defined
@@ -144,5 +147,6 @@ alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TA
 alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
 alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
+alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
 ```
 

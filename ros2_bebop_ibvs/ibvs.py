@@ -8,6 +8,7 @@ from std_msgs.msg import Bool, Int32
 from std_srvs.srv import Empty
 from sensor_msgs.msg import Image
 
+from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
 # from PyQt5.QtGui import QImage
 import cv2
@@ -16,10 +17,11 @@ import struct
 import os
 
 IDLE = 0
-AUTOMATIC = 1
+IBVS = 1
 TAKEOFF = 2
 LANDING = 3
 STOP = 4
+INITCOND = 5
 
 def get_yaw(orientation):
     a = 2* (orientation.w * orientation.z + orientation.x * orientation.y)
@@ -85,6 +87,7 @@ class Controller(Node):
         self.declare_parameter('gain', 1.)
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
+        self.declare_parameter('p0', [1.]*4)
         
         self.frequency = self.get_parameter('frequency').value
         self.robot_name = self.get_parameter('robot_name').value.strip()
@@ -97,6 +100,8 @@ class Controller(Node):
         self.gain = self.get_parameter('gain').value
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
+        self.initial_cond = self.get_parameter('p0').value
+        # self.initial_cond = np.array(self.initial_cond)
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
@@ -172,7 +177,9 @@ class Controller(Node):
         self.state = IDLE
         self.new_state = IDLE
         self.current_pose = Pose()
+        self.data2save = False
         self.enable = False
+        self.found_arucos_w = False
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
 
         # INIT control loop
@@ -215,10 +222,15 @@ class Controller(Node):
         corners, ids, rejected = self.detector.detectMarkers(gray_image)
 
         if ids is None:
-            self.get_logger().warning("No ArUcos found in received image")
+            if self.found_arucos_w:
+                self.get_logger().warning("No ArUcos found in received image")
+                self.found_arucos_w = False
             self.points = None
             self.points_ref = None
             return
+        if not self.found_arucos_w:
+            self.get_logger().warning("ArUcos found in received image")
+            self.found_arucos_w = True
 
         #   Pairing
         _p = np.array([])
@@ -253,44 +265,131 @@ class Controller(Node):
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
 
+    def save_data(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        orientation_q = self.current_pose.orientation
+        ang = get_yaw(orientation_q)
+        with open(self.data_d, 'ab') as f:
+
+            data = (t, self.current_pose.position.x,
+                    self.current_pose.position.y,
+                    self.current_pose.position.z,
+                    ang)
+            data += tuple(self.u[[0,1,2,5]].reshape(-1))
+            data += (np.linalg.norm(self.error),)
+            binary = struct.pack('dddddddddd', *data)
+            f.write(binary)
+
+        with open(self.arucos_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.p[i:i+4, :].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+        with open(self.error_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.error[i:i+8].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
     def control_loop(self):
 
         if self.state == IDLE:
             #   Change state
             if self.new_state == TAKEOFF:
-                self.get_logger().info("Cambiando a estado TAKEOFF")
+                self.get_logger().info("State change: TAKEOFF")
                 self.state = TAKEOFF
+            if self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
 
         elif self.state == TAKEOFF:
             current_z = self.current_pose.position.z
 
             if abs(current_z- self.takeoff_height) < self.takeoff_threshold:
                 #   Proportional control iniside takeoff_threshold
-                self.get_logger().info(f"Altura de despegue alcanzada: {current_z:.2f}m")
+                self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
                 self.takeoff_complete = True
-                msg = Twist()
-                msg.linear.z = -0.1*self.gain_takeoff*float(current_z- self.takeoff_height)
-                self.cmd_pub.publish(msg)
 
             else:
                 #   Proportional control outiside takeoff_threshold
                 self.takeoff_complete = False
-                msg = Twist()
-                msg.linear.z = -self.gain_takeoff*float(current_z- self.takeoff_height)
-                self.cmd_pub.publish(msg)
+
+            msg = Twist()
+            msg.linear.z = -self.gain_takeoff*float(current_z- self.takeoff_height)
+            self.cmd_pub.publish(msg)
 
             self.get_logger().debug(f"Control input: {msg.linear.z}")
             #   Change state
-            if self.new_state == AUTOMATIC and self.takeoff_complete:
-                self.get_logger().info("Cambiando a estado AUTOMATIC")
-                self.state = AUTOMATIC
-            elif self.new_state == AUTOMATIC and  not self.takeoff_complete:
-                self.get_logger().info("Waiting for TAKEOFF to finish, can not change to AUTOMATIC")
+            if self.new_state == IBVS and self.takeoff_complete:
+                self.get_logger().info("State change: IBVS")
+                self.state = IBVS
+            elif self.new_state == IBVS and  not self.takeoff_complete:
+                self.get_logger().info("Waiting for TAKEOFF to finish, can not change to IBVS")
             elif self.new_state == LANDING:
-                self.get_logger().info("Cambiando a estado LANDING")
+                self.get_logger().info("State change: LANDING")
                 self.state = LANDING
             elif self.new_state == STOP:
-                self.get_logger().info("Cambiando a estado STOP")
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
+        elif self.state == INITCOND:
+            _my_position = [self.current_pose.position.x,
+                           self.current_pose.position.y,
+                           self.current_pose.position.z]
+            my_position = np.array(_my_position)
+            _orientation = [self.current_pose.orientation.x,
+                            self.current_pose.orientation.y,
+                            self.current_pose.orientation.z,
+                            self.current_pose.orientation.w]
+
+            _delta = my_position- self.initial_cond[:3]
+            if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Initial condition reached")
+                self.init_complete = True
+
+            msg = Twist()
+            _u = -self.gain_takeoff * _delta
+            _R = quaternion_matrix(_orientation)
+            _R = _R[:3,:]
+            _R = _R[:,:3]
+            _u = _R.T @ _u
+
+            _, _, _yaw = euler_from_matrix(_R)
+
+            _yaw = _yaw - self.initial_cond[3]
+            _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+            _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+            msg.linear.x = float(_u[0])
+            msg.linear.y = float(_u[1])
+            msg.linear.z = float(_u[2])
+            msg.angular.z = float(-self.gain_takeoff* _yaw)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {_u}")
+            #   Change state
+            if self.new_state == IBVS and self.init_complete:
+                self.get_logger().info("State change: IBVS")
+                self.state = IBVS
+            elif self.new_state == IBVS and  not self.init_complete:
+                self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to IBVS")
+            elif self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
                 self.state = STOP
 
         elif self.state == LANDING:
@@ -304,7 +403,7 @@ class Controller(Node):
                 self.cmd_pub.publish(msg)
             else:
                 #   Landing finished
-                self.get_logger().info("¡Aterrizaje completado!")
+                self.get_logger().info("¡Landing complete!")
                 self.state = IDLE
                 self.enable = False
                 self.cmd_enable.publish(Bool(data=self.enable))
@@ -312,14 +411,14 @@ class Controller(Node):
 
             #   Change state
             if self.new_state == IDLE:
-                self.get_logger().info("Cambiando a estado IDLE")
+                self.get_logger().info("State change: IDLE")
                 self.state = IDLE
             elif self.new_state == STOP:
-                self.get_logger().info("Cambiando a estado STOP")
+                self.get_logger().info("State change: STOP")
                 self.state = STOP
 
 
-        elif self.state == AUTOMATIC:
+        elif self.state == IBVS:
 
             if self.points is None:
                 self.get_logger().error("Image error can not be computed")
@@ -329,11 +428,13 @@ class Controller(Node):
                 msg.linear.z = 0.
                 msg.angular.z = 0.
 
+                if self.data2save:
+                    self.save_data()
                 try:
                     self.cmd_pub.publish(msg)
 
                 except Exception as e:
-                    self.get_logger().error(f"Error en control automático: {str(e)}")
+                    self.get_logger().error(f"Error with IBVS control: {str(e)}")
                     self.enable = False
                     self.cmd_enable.publish(Bool(data=self.enable))
                 return
@@ -348,7 +449,6 @@ class Controller(Node):
                 self.u =  np.zeros(6)
 
             self.u = - self.gain * L @ self.error.reshape((-1,1))
-
 
             #   Transformation camera -> robot
 
@@ -370,56 +470,25 @@ class Controller(Node):
                 self.cmd_pub.publish(msg)
 
             except Exception as e:
-                self.get_logger().exception(f"Error en control automático: {str(e)}")
+                self.get_logger().exception(f"Error IBVS control: {str(e)}")
                 self.enable = False
                 self.cmd_enable.publish(Bool(data=self.enable))
 
             #   Save data
-            t = self.get_clock().now().nanoseconds * 1e-9
-            orientation_q = self.current_pose.orientation
-            ang = get_yaw(orientation_q)
-            with open(self.data_d, 'ab') as f:
-
-                data = (t, self.current_pose.position.x,
-                        self.current_pose.position.y,
-                        self.current_pose.position.z,
-                        ang)
-                # print("len (data) = ", len(data))
-                data += tuple(self.u[[0,1,2,5]].reshape(-1))
-                # print("len (data) = ", len(data))
-                data += (np.linalg.norm(self.error),)
-                # print("np.linalg.norm(self.error) = ", np.linalg.norm(self.error))
-                # print("np.linalg.norm(self.error) = ", (np.linalg.norm(self.error)))
-
-                # print("len (data) = ", len(data))
-                # print("data", data)
-                binary = struct.pack('dddddddddd', *data)
-                f.write(binary)
-
-            with open(self.arucos_d, 'ab') as f:
-                for i in range(len(self.ids)):
-
-                    data = (t, self.ids[i])
-                    data += tuple(self.p[i:i+4, :].reshape(-1))
-                    binary = struct.pack('didddddddd', *data)
-                    f.write(binary)
-
-            with open(self.error_d, 'ab') as f:
-                for i in range(len(self.ids)):
-
-                    data = (t, self.ids[i])
-                    data += tuple(self.error[i:i+8].reshape(-1))
-                    binary = struct.pack('didddddddd', *data)
-                    f.write(binary)
-
+            self.save_data()
+            self.data2save = True
 
             #   Change state
             if self.new_state == LANDING:
-                self.get_logger().info("Cambiando a estado LANDING")
+                self.get_logger().info("State change: LANDING")
                 self.state = LANDING
             elif self.new_state == STOP:
-                self.get_logger().info("Cambiando a estado STOP")
+                self.get_logger().info("State change: STOP")
                 self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
 
         elif self.state == STOP:
             self.cmd_pub.publish(Twist())
@@ -427,7 +496,7 @@ class Controller(Node):
             self.cmd_pub.publish(Twist())
             self.enable = False
             self.cmd_enable.publish(Bool(data=self.enable))
-            self.get_logger().info("Cambiando a estado IDLE")
+            self.get_logger().info("State change: IDLE")
             self.state = IDLE
 
 def main(args=None):

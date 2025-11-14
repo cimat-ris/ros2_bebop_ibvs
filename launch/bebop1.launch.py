@@ -15,7 +15,6 @@ def generate_launch_description():
 
     # Definir nombres de robots y condiciones iniciales como cadenas JSON
     robot_name = "bebop1"
-    initial_conditions = '[2.5, -0.5, 0.0, 1.0]'
 
     # Lanzar Gazebo
     gz_sim = IncludeLaunchDescription(
@@ -23,7 +22,7 @@ def generate_launch_description():
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
         launch_arguments={
-            'gz_args': '-r -z 1000000 simple_lab_4.world ',
+            'gz_args': '-r -z 1000000 simple_lab_1.world ',
         'on_exit_shutdown': 'true'}.items(),
     )
 
@@ -46,10 +45,10 @@ def generate_launch_description():
             '-name', 'parrot_bebop_2',
             '-world', 'default',
             '-file', bebop_model,
-            '-x', '1.',
-            '-y', '1.',
+            '-x', '-1.',
+            '-y', '-1.',
             '-z', '0.1',
-            '-Y', '1.2',
+            '-Y', '1.',
         ],
         output='screen',
     )
