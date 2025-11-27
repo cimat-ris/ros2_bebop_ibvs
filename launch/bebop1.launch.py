@@ -22,7 +22,7 @@ def generate_launch_description():
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
         launch_arguments={
-            'gz_args': '-r -z 1000000 simple_lab_1.world ',
+            'gz_args': '-r -z 1000000 simple_lab_2.world ',
         'on_exit_shutdown': 'true'}.items(),
     )
 
@@ -58,7 +58,9 @@ def generate_launch_description():
     yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'control.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
-    config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference.png')
+    # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_4_2.png')
+    config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_2.png')
+    # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_1_aruco.png')
     if not os.path.exists(config["ref_image"]):
         print(f"Camara reference {config["ref_image"]} does not exists")
         return

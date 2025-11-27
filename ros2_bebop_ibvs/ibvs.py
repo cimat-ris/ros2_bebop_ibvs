@@ -29,40 +29,65 @@ def get_yaw(orientation):
     return np.arctan2(a,b)
 
 
-def Interaction_Matrix(points,Z,gdl = 1):
 
-    n = points.shape[0]
-    if gdl == 1:
-        m = 6
-    if gdl == 2:
-        m = 4
-    if gdl == 3:
-        m = 3
-    L = np.zeros((n,2*m))
+def interaction_matrix_xyz(points,Z):
 
-    if gdl == 1:
-        L[:,0]  =   L[:,7] = -1/Z
-        L[:,2]  =   points[:,0]/Z
-        L[:,3]  =   points[:,0]*points[:,1]
-        L[:,4]  =   -(1+points[:,0]**2)
-        L[:,5]  =   points[:,1]
-        L[:,8]  =   points[:,1]/Z
-        L[:,9]  =   1+points[:,1]**2
-        L[:,10] =   -points[:,0]*points[:,1]
-        L[:,11] =   -points[:,0]
-    if gdl == 2:
-        L[:,0]  =   L[:,5] = -1/Z
-        L[:,2]  =   points[:,0]/Z
-        L[:,3]  =   points[:,1]
-        L[:,6]  =   points[:,1]/Z
-        L[:,7] =   -points[:,0]
-    if gdl == 3:
-        L[:,0]  =   L[:,4] = -1/Z
-        L[:,2]  =   points[:,0]/Z
-        L[:,5]  =   points[:,1]/Z
+    n = points.shape[1]
+    L = np.zeros((n,12), dtype= np.float64)
+    L[:,0]  =   L[:,7] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =   points[0,:]*points[1,:]
+    L[:,4]  =   -(1+points[0,:]**2)
+    L[:,5]  =   points[1,:]
+    L[:,8]  =   points[1,:]/Z
+    L[:,9]  =   1+points[1,:]**2
+    L[:,10] =   -points[0,:]*points[1,:]
+    L[:,11] =   -points[0,:]
+
+    return L.reshape((-1,6))
+
+def interaction_matrix_y(points,Z):
+
+    n = points.shape[1]
+    L = np.zeros((n,8))
+    L[:,0]  =   L[:,5] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =  -(1+points[0,:]**2)
+    L[:,6]  =   points[1,:]/Z
+    L[:,7]  =  -points[0,:]*points[1,:]
+
+    return L.reshape((-1,4))
+
+def interaction_matrix_t(points,Z):
+    n = points.shape[1]
+    L = np.zeros((n,6))
+    L[:,0]  =   L[:,4] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,5]  =   points[1,:]/Z
 
 
-    return L.reshape((2*n,m))
+    return L.reshape((-1,3))
+
+def interaction_matrix_polar(points, Z):
+
+    n = points.shape[1]
+    L = np.zeros((n,12))
+
+    c = np.cos(points[1,:])
+    s = np.sin(points[1,:])
+
+    L[:,0]  =   -c/Z
+    L[:,1]  =   -s/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =   (1+points[0,:]**2)*s
+    L[:,4]  =   -(1+points[0,:]**2)*c
+    L[:,6]  =   s/(points[0,:]*Z)
+    L[:,7]  =   -c/(points[0,:]*Z)
+    L[:,9] =    c/points[0,:]
+    L[:,10] =   s/points[0,:]
+    L[:,11] =   -1.
+
+    return L.reshape((-1,6))
 
 def Inv_Moore_Penrose(L):
     A = L.T@L
@@ -85,9 +110,12 @@ class Controller(Node):
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
+        self.declare_parameter('gain_w', 1.)
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
         self.declare_parameter('p0', [1.]*4)
+        self.declare_parameter('polar', False)
+        self.declare_parameter('save_log', False)
         
         self.frequency = self.get_parameter('frequency').value
         self.robot_name = self.get_parameter('robot_name').value.strip()
@@ -98,15 +126,19 @@ class Controller(Node):
         self.output = self.get_parameter('output').value
         self.img_depth = self.get_parameter('img_depth').value
         self.gain = self.get_parameter('gain').value
+        self.kw = self.get_parameter('gain_w').value
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
         self.initial_cond = self.get_parameter('p0').value
+        self.enable_polar = self.get_parameter('polar').value
+        self.enable_log = self.get_parameter('save_log').value
         # self.initial_cond = np.array(self.initial_cond)
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
+        print(self.K)
 
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
@@ -139,7 +171,7 @@ class Controller(Node):
         self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
 
         #   Publishers
-        qos = QoSProfile(depth=10)
+        qos = QoSProfile(depth=2)
         self.cmd_pub = self.create_publisher(Twist,
                                              f"/{self.robot_name}/cmd_vel",
                                              qos)
@@ -170,17 +202,29 @@ class Controller(Node):
         
         #   output files for data storage:
         self.data_d = os.path.join(self.output, "state.dat")
+        with open(self.data_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
         self.arucos_d = os.path.join(self.output, "arUcos.dat")
+        with open(self.arucos_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
         self.error_d = os.path.join(self.output, "error.dat")
+        with open(self.error_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.log_d = os.path.join(self.output, "log.dat")
+        with open(self.log_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
 
         #   State
         self.state = IDLE
+        self.u = np.zeros(6)
+        self._u = np.zeros(6)
         self.new_state = IDLE
         self.current_pose = Pose()
         self.data2save = False
         self.enable = False
         self.found_arucos_w = False
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
+        self.m_vel = Twist()
 
         # INIT control loop
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
@@ -236,24 +280,36 @@ class Controller(Node):
         _p = np.array([])
         _p_ref = np.array([])
         self.ids = []
-        for i in range(ids.shape[1]):
-            if ids[0,i] in self._ids_ref:
-                idx = self._ids_ref.index(ids[0,i])
+        # self.get_logger().info(str(ids.shape[0]))
+        for i in range(ids.shape[0]):
+            if ids[i,0] in self._ids_ref:
+                idx = self._ids_ref.index(ids[i,0])
                 _p = np.concatenate ((_p, corners[i].reshape(-1 )))
                 _p_ref = np.concatenate ((_p_ref, self.corners_ref[idx].reshape(-1) ))
-                self.ids.append(ids[0,i])
+                self.ids.append(ids[i,0])
 
         if _p.shape[0] == 0:
             self.get_logger().warning(f"Matching Failed {self._ids_ref} {ids.tolist()}")
+            return
         self.p = _p.reshape((-1,2))
         _p_ref = _p_ref.reshape((-1,2))
         # self.ids = np.array(self.ids, dtype = int)
 
         #   Normalize
-        self.points = self.normalize(self.p.T)
-        self.points_ref = self.normalize(_p_ref.T)
-        self.points = self.points.T.reshape((-1,2))
-        self.points_ref = self.points_ref.T.reshape((-1,2))
+        self.points = self.normalize(self.p.astype(float).T)
+        self.points_ref = self.normalize(_p_ref.astype(float).T)
+
+        if self.enable_polar:
+            _r = np.linalg.norm(self.points, axis = 0)
+            _t = np.arctan2(self.points[1,:], self.points[0,:])
+            self.points = np.c_[_r, _t].T
+            _r = np.linalg.norm(self.points_ref, axis = 0)
+            _t = np.arctan2(self.points_ref[1,:], self.points_ref[0,:])
+            self.points_ref = np.c_[_r, _t].T
+
+
+        # self.points = self.points.T.reshape((-1,2))
+        # self.points_ref = self.points_ref.T.reshape((-1,2))
 
         #   Publish detection
         _image = self.cv_image.copy()
@@ -277,6 +333,8 @@ class Controller(Node):
                     self.current_pose.position.z,
                     ang)
             data += tuple(self.u[[0,1,2,5]].reshape(-1))
+            # data += tuple(self._u[[0,1,2,3]].reshape(-1))
+            # data += tuple(self._u[[0,1,2,2]].reshape(-1))
             data += (np.linalg.norm(self.error),)
             binary = struct.pack('dddddddddd', *data)
             f.write(binary)
@@ -285,7 +343,7 @@ class Controller(Node):
             for i in range(len(self.ids)):
 
                 data = (t, self.ids[i])
-                data += tuple(self.p[i:i+4, :].reshape(-1))
+                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
                 binary = struct.pack('didddddddd', *data)
                 f.write(binary)
 
@@ -293,9 +351,19 @@ class Controller(Node):
             for i in range(len(self.ids)):
 
                 data = (t, self.ids[i])
-                data += tuple(self.error[i:i+8].reshape(-1))
+                data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
                 binary = struct.pack('didddddddd', *data)
                 f.write(binary)
+
+        # save log
+        with open(self.log_d, 'ab') as f:
+            data = (t,)
+            # data += tuple(self.L.reshape(-1))
+            data += tuple(self.svd.reshape(-1))
+            # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
+            binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
+            # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
+            f.write(binary)
 
     def control_loop(self):
 
@@ -304,6 +372,7 @@ class Controller(Node):
             if self.new_state == TAKEOFF:
                 self.get_logger().info("State change: TAKEOFF")
                 self.state = TAKEOFF
+                self.takeoff_complete = False
             if self.new_state == INITCOND:
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
@@ -311,18 +380,15 @@ class Controller(Node):
 
         elif self.state == TAKEOFF:
             current_z = self.current_pose.position.z
+            delta = current_z- self.takeoff_height
 
-            if abs(current_z- self.takeoff_height) < self.takeoff_threshold:
+            if abs(delta) < self.takeoff_threshold and not self.takeoff_complete:
                 #   Proportional control iniside takeoff_threshold
                 self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
                 self.takeoff_complete = True
 
-            else:
-                #   Proportional control outiside takeoff_threshold
-                self.takeoff_complete = False
-
             msg = Twist()
-            msg.linear.z = -self.gain_takeoff*float(current_z- self.takeoff_height)
+            msg.linear.z = -self.gain_takeoff*float(delta)
             self.cmd_pub.publish(msg)
 
             self.get_logger().debug(f"Control input: {msg.linear.z}")
@@ -332,6 +398,7 @@ class Controller(Node):
                 self.state = IBVS
             elif self.new_state == IBVS and  not self.takeoff_complete:
                 self.get_logger().info("Waiting for TAKEOFF to finish, can not change to IBVS")
+                self.new_state == TAKEOFF
             elif self.new_state == LANDING:
                 self.get_logger().info("State change: LANDING")
                 self.state = LANDING
@@ -410,7 +477,7 @@ class Controller(Node):
                 self.cmd_pub.publish(Twist())
 
             #   Change state
-            if self.new_state == IDLE:
+            if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
                 self.get_logger().info("State change: IDLE")
                 self.state = IDLE
             elif self.new_state == STOP:
@@ -418,61 +485,122 @@ class Controller(Node):
                 self.state = STOP
 
 
+        elif self.state == IBVS and self.points is None:
+
+            self.get_logger().error("Image error can not be computed")
+            # msg = Twist()
+            # msg.linear.x = 0.
+            # msg.linear.y = 0.
+            # msg.linear.z = 0.
+            # msg.angular.z = 0.
+
+            if self.data2save:
+                self.save_data()
+
+            try:
+                self.cmd_pub.publish(self.m_vel)
+
+            except Exception as e:
+                self.get_logger().error(f"Error with IBVS control: {str(e)}")
+                self.enable = False
+                self.cmd_enable.publish(Bool(data=self.enable))
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
         elif self.state == IBVS:
-
-            if self.points is None:
-                self.get_logger().error("Image error can not be computed")
-                msg = Twist()
-                msg.linear.x = 0.
-                msg.linear.y = 0.
-                msg.linear.z = 0.
-                msg.angular.z = 0.
-
-                if self.data2save:
-                    self.save_data()
-                try:
-                    self.cmd_pub.publish(msg)
-
-                except Exception as e:
-                    self.get_logger().error(f"Error with IBVS control: {str(e)}")
-                    self.enable = False
-                    self.cmd_enable.publish(Bool(data=self.enable))
-                return
-
             #   IBVS
             self.error = self.points - self.points_ref
+            if self.enable_polar:
+                select = (abs(self.error[1,:]) > np.pi)
+                # self.get_logger().info(f"{select}")
+                self.error[1,select] = -1.* np.sign(self.error[1,select]) * (2*np.pi - abs(self.error[1,select]))
 
-            L = Interaction_Matrix(self.points, self.img_depth) #   TODO: depth?
-            L = Inv_Moore_Penrose(L)
-            if L is None:
-                print("Invalid Ls matrix")
-                self.u =  np.zeros(6)
+                # self.error[1,self.error[1,:] < np.pi] += 2*np.pi
+                # self.error[1,self.error[1,:] > np.pi] -= 2*np.pi
 
-            self.u = - self.gain * L @ self.error.reshape((-1,1))
+
+            # self.get_logger().info(f"Norm(s^*) = \n{self.points_ref}")
+            # self.get_logger().info(f"Norm(s) = \n{self.points}")
+            # self.get_logger().info(f"s^* = \n{self.corners_ref[0]}")
+            #   TODO: depth?
+            if self.enable_polar:
+                self.L = interaction_matrix_polar(self.points, self.img_depth)
+                # self.L = interaction_matrix_polar(self.points_ref, self.img_depth)
+            else:
+                self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+                # self.L = interaction_matrix_y(self.points, self.img_depth)
+                # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
+            # self.get_logger().info( f"L: : {self.L}")
+            L_inv = Inv_Moore_Penrose(self.L)
+            _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+
+            if L_inv is None:
+                self.get_logger().error("Invalid Ls matrix")
+                # self.u =  np.zeros(6)
+                self.cmd_pub.publish(self.m_vel)
+
+            # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+            self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+
+
+            # if abs(self.u[1].T) > 0.05 :
+            # self.get_logger().info( f"L: : {L_inv}")
+            # self.get_logger().info( f"Control_c y : {self._u.T}")
+            # self.get_logger().info( f"Error: {self.error}")
+            # self.get_logger().info( f"Error: {self.error.T.reshape((-1,1)).T}")
 
             #   Transformation camera -> robot
 
-            _w = self.R_cam @ self.u[3:]
-            _v = (self.R_cam @ self.u[:3]).reshape(-1)
+            #   6DOF
+            _w = self.R_cam @ self._u[3:]
+            _v = (self.R_cam @ self._u[:3]).reshape(-1)
             _v += np.cross( self.t_cam , _w.reshape(-1) )
+            _w *= self.kw
+            self.u[:3] = _v.copy()
+            self.u[3:] = _w.reshape(-1)
+            #   4DOF
+            # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+            # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+            # _v += np.cross( self.t_cam , _w.reshape(-1) )
+            # _w *= self.kw
+            # self.u[:3] = _v.copy()
+            # self.u[3:] = _w.copy()
 
-            self.u[:3] = _v.reshape((3,1))
-            self.u[3:] = _w.reshape((3,1))
+            # self.get_logger().info( f"Control_d: {self.u}")
 
             #   Send message
-            msg = Twist()
-            msg.linear.x = float(self.u[0])
-            msg.linear.y = float(self.u[1])
-            msg.linear.z = float(self.u[2])
-            msg.angular.z = float(self.u[5])
+            # msg = Twist()
+            # _norm = np.linalg.norm(self.u)
+            # if  _norm > .2:
+            #     self.u = .2 * self.u  / _norm
 
-            try:
-                self.cmd_pub.publish(msg)
+            self.m_vel.linear.x = float(self.u[0])
+            self.m_vel.linear.y = float(self.u[1])
+            self.m_vel.linear.z = float(self.u[2])
+            self.m_vel.angular.z = float(self.u[5])
+            # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
+            self.cmd_pub.publish(self.m_vel)
 
-            except Exception as e:
-                self.get_logger().exception(f"Error IBVS control: {str(e)}")
-                self.enable = False
-                self.cmd_enable.publish(Bool(data=self.enable))
+            #   BEGIN
+            # self.m_vel = Twist()
+            # # self.m_vel.linear.x = float(.1)
+            # # self.m_vel.linear.x = float(self.u[0])
+            # # self.m_vel.linear.y = float(-.1)
+            # # self.m_vel.linear.y = float(self.u[1])
+            # self.m_vel.linear.z = float(self.u[2])
+            # # self.m_vel.angular.z = float(self.u[5])
+            # self.cmd_pub.publish(self.m_vel)
+
+            #   END
 
             #   Save data
             self.save_data()

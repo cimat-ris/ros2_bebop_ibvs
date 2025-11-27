@@ -247,6 +247,7 @@ def plotArucos(directory, arucos, reference):
     fig, ax = plt.subplots()
     fig.suptitle("ArUcos")
     for i, v in arucos.items():
+        print(f"Reference {i}")
         if i in reference[0]:
             k = reference[0].index(i)
             points = np.array(v["v"]).reshape((8,-1))
@@ -255,7 +256,7 @@ def plotArucos(directory, arucos, reference):
                                 points,
                                 s_ref,
                             camera_iMsize,
-                            enableLims = False)
+                            enableLims = True)
     labels = ["Start","End","Reference","trayectory"]
     symbols = [mlines.Line2D([0],[0],marker='*',color='k'),
                mlines.Line2D([0],[0],marker='o',color='k'),
@@ -307,9 +308,9 @@ def plot(directory, state):
     # print(time.shape)
     fig_v, ax_v = plt.subplots(nrows = 1, figsize=(5,5))
     fig_v.suptitle("Velocities")
-    symbols = plot_time(ax_v, time,velocities)
+    symbols = plot_time(ax_v, time, velocities, color_offset = 1)
     ax_v.legend(symbols,labels, loc=1)
-    # ax_v.set_ylim((-0.06,0.06))
+    ax_v.set_ylim([-.5,.5])
     # plt.show()
     plt.savefig(directory +"Velocities.pdf",bbox_inches='tight')
     plt.close()
@@ -318,11 +319,46 @@ def plot(directory, state):
     labels = ["X","Y","Z","Yaw"]
     fig_p, ax_p = plt.subplots(nrows = 1, figsize=(5,5))
     fig_p.suptitle("State")
-    symbols = plot_time(ax_p, time,positions)
+    symbols = plot_time(ax_p, time, positions, color_offset = 1)
     ax_p.legend(symbols,labels, loc=1)
     # ax_p.set_ylim((-0.06,0.06))
     # plt.show()
     plt.savefig(directory +"State.pdf",bbox_inches='tight')
+    plt.close()
+
+def plotLog(directory, log):
+
+    # print(state.shape)
+
+    time = log[0,:]
+    svd = log[1:,:]
+    # cutoff = 4*2*4+1 # 4 dof
+    # cutoff = 6*2*4+1 # 6 dof
+    # interaction = log[1:cutoff,:]
+    # svd = log[cutoff:-1,:]
+
+
+    # #  plot interaction matrix components
+    # # print(time.shape)
+    # fig_v, ax_v = plt.subplots(nrows = 1, figsize=(5,5))
+    # fig_v.suptitle("Interaction matrix")
+    # for i in range (6):
+    #     symbols = plot_time(ax_v, time, interaction[i:i*8], color_offset = 1)
+    # # ax_v.set_ylim([-.5,.5])
+    # # plt.show()
+    # labels = [str(i) for i in range(8)]
+    # ax_v.legend(symbols,labels, loc=1)
+    # plt.savefig(directory +"LOG_Interaction.pdf",bbox_inches='tight')
+    # plt.close()
+
+    #  plot singular values
+    labels = ["X","Y","Z","Yaw"]
+    fig_p, ax_p = plt.subplots(nrows = 1, figsize=(5,5))
+    fig_p.suptitle("Singular values L.T L ")
+    plot_time(ax_p, time, svd , color_offset = 1)
+    # ax_p.set_ylim((-0.06,0.06))
+    # plt.show()
+    plt.savefig(directory +"LOG_SVD_D.pdf",bbox_inches='tight')
     plt.close()
 
 
@@ -357,6 +393,8 @@ def read_data(directory):
 
 
     state[0,:] -= state[0,0]
+
+
 
     name = directory +'/arUcos.dat'
     length = os.path.getsize(name)
@@ -439,9 +477,30 @@ def read_data(directory):
             error[i]["v"] = error[i]["v"].T
             error[i]["t"] = [t - t0 for t in error[i]["t"]]
 
+    name = directory +'/log.dat'
+    log = None
+    if os.path.exists(name):
+        # name = directory +'/arUcos.dat'
+        length = os.path.getsize(name)
+        # print("length = ", length)
+
+        with open(name, 'rb') as fileH:
+            #   header
+            # size = 1+9*4    # 4 dof
+            # size = 1+9*6    # 6 dof
+            size = 1+6    # 6 dof only singular values
+            rows = (length) / (size* d)
+            rows = int(np.floor(rows))
+            log = np.fromfile(fileH,
+                                    dtype = np.float64,
+                                    count = size*rows)
+            log = log.reshape((rows,size))
+            log = log.T
 
 
-    return state, arucos, error
+        log[0,:] -= log[0,0]
+
+    return state, arucos, error, log
 
 def plot3D(directory, state, pd):
     
@@ -466,22 +525,21 @@ def plot3D(directory, state, pd):
     z_min = state[3,0]
     z_max = state[3,0]
 
-    init = np.concatenate((state[1:4,0], np.array([pi/2.,0.]), np.array([state[4,0]])))
-    end = np.concatenate((state[1:4,-1], np.array([pi/2.,0.]), np.array([state[4,-1]])))
     pos_array = np.zeros((6,state.shape[1]))
     pos_array[[0,1,2,5],:] = state[1:5,:]
-    pos_array[3,:] = pi/2.
-    x_min = min(x_min, init[0], end[0], pd[0])
-    x_max = max(x_max, init[0], end[0], pd[0])
-    y_min = min(y_min, init[1], end[1], pd[1])
-    y_max = max(y_max, init[1], end[1], pd[1])
-    z_min = min(z_min, init[2], end[2], pd[2])
-    z_max = max(z_max, init[2], end[2], pd[2])
+    pos_array[4,:] = pi/2.
+
+    x_min = min(x_min, pd[0])
+    x_max = max(x_max, pd[0])
+    y_min = min(y_min, pd[1])
+    y_max = max(y_max, pd[1])
+    z_min = min(z_min, pd[2])
+    z_max = max(z_max, pd[2])
 
     plot_3Dcam(ax,
                 pos_array,
-                init,
-                end,
+                pos_array[:,0],
+                pos_array[:,-1],
                 pd,
                 color = colors[0],
                 camera_scale    = 0.05)
@@ -512,7 +570,7 @@ def plot3D(directory, state, pd):
     
 def main(arg):
 
-    pd = np.array([-1.,-.7,1.,pi/2., 0., pi/2. ])
+    pd = np.array([0., 0., 1., 0, pi/2., pi/2])
 
     if len(arg) < 3:
         print("USE:\n$ python3 [DIRECTORY] [REFERENCE] [MARKERS]")
@@ -521,7 +579,7 @@ def main(arg):
     reference = arg[2]
     if len(arg) > 3:
         markers = markers_list.index(arg[3])
-    state, arucos, error = read_data(directory)
+    state, arucos, error, log = read_data(directory)
 
     s_ref = get_reference(reference, markers = markers, out_directory = directory )
     print(s_ref)
@@ -533,6 +591,8 @@ def main(arg):
     plotError(directory, error)
     print("Ploting 3D")
     plot3D(directory, state, pd )
+    print("Ploting LOG")
+    plotLog(directory, log )
 
 
 
