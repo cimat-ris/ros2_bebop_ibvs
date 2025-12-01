@@ -1,15 +1,6 @@
 K:   [375.98849,  0.   ,428.,
       0.     ,375.98849,240.,
       0.     ,  0.   ,  1.   ]
-# K:   [532.639,  0.   ,433.886,
-#       0.     ,523.695,230.153,
-#       0.     ,  0.   ,  1.   ]
-# K:   [200.,  0.   ,433.886,
-#     0.     ,200.,230.153,
-#     0.     ,  0.   ,  1.   ]
-# K: [537.292878, 0.000000, 427.331854,
-#     0.000000, 527.000348, 240.226888,
-#     0.000000, 0.000000, 1.000000]
 # p0: [0., 0.,1., 1.5708] #   reference 1 aruco
 # p0: [0., 0.,1., 1.5708] #   reference 4_2 aruco
 # p0: [0., 0.,1., 1.5708] #   reference 2 aruco
@@ -37,28 +28,12 @@ robot_name: "bebop1"
 takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
-
-# gain: 5.
-# img_depth: 2.
-
-# polar: true
-# gain: .1
-# gain_w: 0.1
-# img_depth: 4.
-
-# polar: true
-# gain: .1
-# gain_w: 1.
-# img_depth: 4.
+gain_takeoff: .5
 
 polar: false
 gain: .2
 gain_w: 1.
 img_depth: 4.
 
-
-gain_takeoff: .5
-
 save_log: true
-
 output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output

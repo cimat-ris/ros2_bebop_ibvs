@@ -13,8 +13,6 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_bebop_ibvs = get_package_share_directory('ros2_bebop_ibvs')
 
-    # Definir nombres de robots y condiciones iniciales como cadenas JSON
-    robot_name = "bebop1"
 
     # Lanzar Gazebo
     gz_sim = IncludeLaunchDescription(

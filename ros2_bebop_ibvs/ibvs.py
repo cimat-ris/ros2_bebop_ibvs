@@ -308,9 +308,6 @@ class Controller(Node):
             self.points_ref = np.c_[_r, _t].T
 
 
-        # self.points = self.points.T.reshape((-1,2))
-        # self.points_ref = self.points_ref.T.reshape((-1,2))
-
         #   Publish detection
         _image = self.cv_image.copy()
         # print(ids)
@@ -488,11 +485,6 @@ class Controller(Node):
         elif self.state == IBVS and self.points is None:
 
             self.get_logger().error("Image error can not be computed")
-            # msg = Twist()
-            # msg.linear.x = 0.
-            # msg.linear.y = 0.
-            # msg.linear.z = 0.
-            # msg.angular.z = 0.
 
             if self.data2save:
                 self.save_data()

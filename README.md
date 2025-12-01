@@ -150,3 +150,41 @@ alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
 ```
 
+#   Plot data
+
+The following utility plots:
++ State evolution
++ 3D Plot of the state evolution
++ Control velocities
++ Image feature error
++ Image feature evolution in a planar projection
++ SVD singular value evolution if saved
+
+Arguments:
++ directory (non optional) = were data is stored and output will be placed
++ reference = reference image
++ pose = 4 coordinate state for the pose where the reference is taken
++ markers = fiducial marker family to be used in the corner extraction
+
+To run:
+```
+$ python3 scripts/plot_data.py -h
+usage: python3 miguel_iros.py [-h] [--reference REFERENCE] [--pose POSE POSE POSE POSE]
+                              [--markers {4X4_50,4X4_100,4X4_250,4X4_1000,5X5_50,5X5_100,5X5_250,5X5_1000,6X6_50,6X6_100,6X6_250,6X6_1000,7X7_50,7X7_100,7X7_250,7X7_1000,ARUCO_ORIGINAL,APRILTAG_16h5,APRILTAG_25h9,APRILTAG_36h10,APRILTAG_36h11,ARUCO_MIP_36h12}]
+                              directory
+
+Plotting experiment data
+
+positional arguments:
+  directory             Directory name (default output/)
+
+options:
+  -h, --help            show this help message and exit
+  --reference REFERENCE
+                        IBVS reference image (default config/reference.png)
+  --pose POSE POSE POSE POSE
+                        Reference pose [x, y, z, yaw (degs)] default [1., 0., 1., 90]
+  --markers {4X4_50,4X4_100,4X4_250,4X4_1000,5X5_50,5X5_100,5X5_250,5X5_1000,6X6_50,6X6_100,6X6_250,6X6_1000,7X7_50,7X7_100,7X7_250,7X7_1000,ARUCO_ORIGINAL,APRILTAG_16h5,APRILTAG_25h9,APRILTAG_36h10,APRILTAG_36h11,ARUCO_MIP_36h12}
+                        Fiducial markers family (default 6X6_1000)
+
+```
