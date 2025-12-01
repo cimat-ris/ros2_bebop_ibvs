@@ -570,7 +570,7 @@ def plot3D(directory, state, pd):
     
 def main(arg):
 
-    pd = np.array([0., 0., 1., 0, pi/2., pi/2])
+    pd = np.array([1., 0., 1., 0, pi/2., pi/2])
 
     if len(arg) < 3:
         print("USE:\n$ python3 [DIRECTORY] [REFERENCE] [MARKERS]")
