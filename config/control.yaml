@@ -5,6 +5,7 @@ K:   [375.98849,  0.   ,428.,
 # p0: [0., 0.,1., 1.5708] #   reference 4_2 aruco
 # p0: [0., 0.,1., 1.5708] #   reference 2 aruco
 # p0: [1., 0.,1., 1.5708] #   reference 2_2 aruco
+# p0: [1., 0.,1., 1.5708] #   reference 2_flat aruco
 # p0: [0., 0.,1., 1.2708] #   reference + yaw_glob
 # p0: [0., -1.,1., 1.5708] #   ony z_cam
 # p0: [0., -1.,1., 1.2708] #   z_cam + yaw_glob

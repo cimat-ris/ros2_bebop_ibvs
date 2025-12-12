@@ -130,7 +130,7 @@ export GZ_VERSION=jetty
 
 ```bash
 # screen 1
-ros2 launch ros2_bebop_ibvs bebop1.launch.py
+ros2 launch ros2_bebop_ibvs bebop1_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
@@ -148,6 +148,50 @@ alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
 alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
+```
+
+
+#   Real Bebop
+
+
+```bash
+#   Screen 1
+ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:="192.168.45.1"
+ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:="192.168.42.1"
+
+#   Screen 2 (Emergency stop)
+ros2 topic pub --once bebop/reset std_msgs/Empty
+
+#   Screen 3
+ros2 run rqt_image_view rqt_image_view
+
+#   Screen 4
+ros2 launch ros2_bebop_ibvs bebop1_real.launch.py
+
+#   Screen 5
+ros2 topic pub --once /stop std_msgs/Empty
+ros2 topic pub --once /start std_msgs/Empty # After starting the launch
+```
+
+Disable camera stabilization
+```bash
+
+
+# Reset driver:
+##  Connect (fast press powerbutton 4 times )
+telnet 192.168.45.1
+telnet 192.168.42.1
+##  Search Driver ID
+ps | grep dragon
+##  Save Driver ID
+ID_DRAGON=$(ps | grep dragon | head -n1 | awk '{print $1}')
+#  Detener dirver
+kill -9 ${ID_DRAGON}
+sleep 1
+##  Confirmar
+ps | grep dragon
+# Reiniciar driver
+/usr/bin/dragon-prog -S 0 &
 ```
 
 #   Plot data

@@ -402,10 +402,11 @@ def plotLog(directory, log):
     # plt.close()
 
     #  plot singular values
-    labels = ["X","Y","Z","Yaw"]
+    labels = [str(i) for i in range(6)]
     fig_p, ax_p = plt.subplots(nrows = 1, figsize=(5,5))
     fig_p.suptitle("Singular values L.T L ")
-    plot_time(ax_p, time, svd , color_offset = 1)
+    symbols = plot_time(ax_p, time, svd , color_offset = 1)
+    ax_p.legend(symbols,labels, loc=1)
     # ax_p.set_ylim((-0.06,0.06))
     # plt.show()
     name = os.path.join(directory ,"LOG_SVD_D.pdf")

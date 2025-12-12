@@ -230,9 +230,6 @@ class Controller(Node):
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
 
-    def get_param_or(self, name, default):
-        self.declare_parameter(name, default)
-        return self.get_parameter(name).get_parameter_value().double_value
 
     def state_changed(self, msg):
         self.new_state = msg.data
