@@ -29,7 +29,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "ibvs = ros2_bebop_ibvs.ibvs:main",
+            "ibvs_sim = ros2_bebop_ibvs.ibvs_sim:main",
             "ibvs_real = ros2_bebop_ibvs.ibvs_real:main",
         ],
     },

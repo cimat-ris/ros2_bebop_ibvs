@@ -7,11 +7,8 @@ K:   [537.292878, 0.000000, 427.331854,
 #       0.     ,  0.   ,  1.   ]
 frequency: 30.
 robot_name: "bebop1"
-gains: [.1, .1, .2, .2]
-time: 4.
-gain: .2
-gain_w: 1.
+gains: [.06, .06, .2, .1]
+time: 6.
 img_depth: 4.
 
-save_log: true
 output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output

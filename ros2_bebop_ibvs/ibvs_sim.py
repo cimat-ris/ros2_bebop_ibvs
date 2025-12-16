@@ -201,8 +201,14 @@ class Controller(Node):
                                                   qos)
         
         #   output files for data storage:
-        self.data_d = os.path.join(self.output, "state.dat")
-        with open(self.data_d, 'w') as file:
+        self.position_d = os.path.join(self.output, "position.dat")
+        with open(self.position_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.vel_d = os.path.join(self.output, "velocities.dat")
+        with open(self.vel_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.norm_e_d = os.path.join(self.output, "norm_error.dat")
+        with open(self.norm_e_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
         self.arucos_d = os.path.join(self.output, "arUcos.dat")
         with open(self.arucos_d, 'w') as file:
@@ -320,17 +326,25 @@ class Controller(Node):
         t = self.get_clock().now().nanoseconds * 1e-9
         orientation_q = self.current_pose.orientation
         ang = get_yaw(orientation_q)
-        with open(self.data_d, 'ab') as f:
-
+        with open(self.position_d, 'ab') as f:
             data = (t, self.current_pose.position.x,
                     self.current_pose.position.y,
                     self.current_pose.position.z,
                     ang)
-            data += tuple(self.u[[0,1,2,5]].reshape(-1))
-            # data += tuple(self._u[[0,1,2,3]].reshape(-1))
-            # data += tuple(self._u[[0,1,2,2]].reshape(-1))
-            data += (np.linalg.norm(self.error),)
-            binary = struct.pack('dddddddddd', *data)
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        with open(self.vel_d, 'ab') as f:
+            data = (t,) + tuple(self.u[[0,1,2,5]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+
+        with open(self.norm_e_d, 'ab') as f:
+            data = (t,np.linalg.norm(self.error))
+            binary = struct.pack('dd', *data)
             f.write(binary)
 
         with open(self.arucos_d, 'ab') as f:
@@ -350,6 +364,8 @@ class Controller(Node):
                 f.write(binary)
 
         # save log
+        if not self.enable_log:
+            return
         with open(self.log_d, 'ab') as f:
             data = (t,)
             # data += tuple(self.L.reshape(-1))
@@ -530,7 +546,8 @@ class Controller(Node):
                 # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
             # self.get_logger().info( f"L: : {self.L}")
             L_inv = Inv_Moore_Penrose(self.L)
-            _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+            if self.enable_log:
+                _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
 
             if L_inv is None:
                 self.get_logger().error("Invalid Ls matrix")

@@ -53,7 +53,7 @@ def generate_launch_description():
 
 
     #   IBVS
-    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'control.yaml')
+    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'control_sim.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
     # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_4_2.png')
@@ -69,7 +69,7 @@ def generate_launch_description():
 
     controller = Node(
             package='ros2_bebop_ibvs',
-            executable='ibvs',
+            executable='ibvs_sim',
             name='ibvs',
             output='screen',
             parameters=[config]

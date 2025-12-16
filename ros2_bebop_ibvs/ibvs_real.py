@@ -9,7 +9,8 @@ from cv_bridge import CvBridge
 from numpy import sin, cos
 import numpy as np
 import cv2
-
+import struct
+import os
 
 
 def interaction_matrix_xyz(points,Z):
@@ -27,6 +28,17 @@ def interaction_matrix_xyz(points,Z):
     L[:,11] =   -points[0,:]
 
     return L.reshape((-1,6))
+
+def interaction_matrix_y(points,Z):
+
+    n = points.shape[1]
+    L = np.zeros((n,8))
+    L[:,0]  =   L[:,5] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =  -(1+points[0,:]**2)
+    L[:,6]  =   points[1,:]/Z
+    L[:,7]  =  -points[0,:]*points[1,:]
+    return L.reshape((-1,4))
 
 def Inv_Moore_Penrose(L):
     A = L.T@L
@@ -47,6 +59,7 @@ class Controller(Node):
         self.declare_parameter('time', 1.)
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('K', [1.]*9)
+        self.declare_parameter('output', "output")
         self.frequency = self.get_parameter('frequency').value
         self.offset = self.get_parameter('offset').value
         self.gains = self.get_parameter('gains').value
@@ -55,12 +68,13 @@ class Controller(Node):
         self.ref_image = self.get_parameter('ref_image').value
         self.time = self.get_parameter('time').value
         self.K = self.get_parameter('K').value
+        self.output = self.get_parameter('output').value
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
-        self.gains += [self.gains[3], self.gains[3]]
+        # self.gains += [self.gains[3], self.gains[3]]
         self.gains = np.array(self.gains)
 
         if not self.name:
@@ -109,8 +123,8 @@ class Controller(Node):
                                              f"/{self.name}/cmd_vel",
                                              qos)
         # camera_tilt = self.create_publisher(Twist,
-        camera_tilt = self.create_publisher(Vector3,
-                                             f"/{self.name}/move_camera",
+        self.camera_tilt = self.create_publisher(Vector3,
+                                             f"{self.name}/move_camera",
                                              qos)
 
         self.takeoff_pub = self.create_publisher(Empty,
@@ -139,19 +153,28 @@ class Controller(Node):
                                                '/matching',
                                                img_qos)
 
+        #   output files
+        self.arucos_d = os.path.join(self.output, "arUcos.dat")
+        with open(self.arucos_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.error_d = os.path.join(self.output, "error.dat")
+        with open(self.error_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.vel_d = os.path.join(self.output, "velocities.dat")
+        with open(self.vel_d , 'w') as file:
+            pass  # 'w' mode clears the file's contents
+
         #   Loop
-        twist = Vector3()
-        twist.y = float(2.)
-        camera_tilt.publish(twist)
-        twist = Vector3()
-        camera_tilt.publish(twist)
+        self.not_init = True
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
     def start(self,msg):
         self.takeoff_pub.publish(Empty())
         self.counter = 0
         self.idle = False
+
     def stop(self, msg):
+        self.land_pub.publish(Empty())
         self.land_pub.publish(Empty())
         self.counter = 0
         self.idle = True
@@ -226,7 +249,38 @@ class Controller(Node):
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
 
+    def save_data(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        with open(self.vel_d, 'ab') as f:
+            data = (t,)
+            data += tuple(self.u[[0,1,2,5]].reshape(-1))
+            # data += tuple(self._u[[0,1,2,3]].reshape(-1))
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        with open(self.arucos_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+        with open(self.error_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
     def control_loop(self):
+
+        if self.not_init:
+            self.camera_tilt.publish(Vector3())
+            self.camera_tilt.publish(Vector3())
+            self.not_init = False
 
         if self.idle:
             return
@@ -254,9 +308,10 @@ class Controller(Node):
         self.error = self.points - self.points_ref
 
         #   TODO: depth?
-        self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+        # self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+        self.L = interaction_matrix_y(self.points_ref, self.img_depth)
         L_inv = Inv_Moore_Penrose(self.L)
-        _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+        # _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
 
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
@@ -264,26 +319,34 @@ class Controller(Node):
             self.cmd_pub.publish(msg)
 
         # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
-        self._u = - self.gains * (L_inv @ self.error.T.reshape((-1,1))).reshape(-1)
+        self._u = - L_inv @ self.error.T.reshape((-1,1)).reshape(-1)
 
 
         #   Transformation camera -> robot
 
         #   6DOF
-        _w = (self.R_cam @ self._u[3:]).reshape(-1)
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
-        print(_v.shape, self.t_cam.shape, _w.shape)
-        _v += np.cross( self.t_cam , _w )
-        self.u[:3] = _v.copy()
-        self.u[3:] = _w.copy()
+        # _w = (self.R_cam @ self._u[3:]).reshape(-1)
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # print(_v.shape, self.t_cam.shape, _w.shape)
+        # _v += np.cross( self.t_cam , _w )
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        #   4DOF
+        self.u[:3] = self.gains[:3] * (self.R_cam @ self._u[:3]).reshape(-1)
+        self.u[5] = -self.gains[3] * self._u[3]
+        self.u[:3] += np.cross(self.t_cam, self.u[3:])
+        # self.u[:3] += - self.t_cam[0]* self.u[5] # TODO simplify cross product
 
         msg.linear.x = float(self.u[0])
         msg.linear.y = float(self.u[1])
         msg.linear.z = float(self.u[2])
         msg.angular.z = float(self.u[5])
-        self.get_logger().info( f"Control_cmd_vel: {self._u}")
+        # self.get_logger().info( f"Control_cmd_vel: {self._u}")
+        self.get_logger().info( f"Control_cmd_vel: {self.u}")
         # self.get_logger().info( f"Control_cmd_vel: {msg.angular.z}")
         self.cmd_pub.publish(msg)
+        self.save_data()
 
 
 

@@ -211,34 +211,12 @@ def plot_time(ax, t_array,
  #              PLOT TASKS
 
 
-def plot(directory, state):
 
-    time = state[0,:]
-    positions = state[1:5,:]
-    velocities = state[5:9,:]
-    error = state[9,:]
 
-        #   Plot error
-    fig_e, ax_e = plt.subplots( figsize=(6,2))
-    fig_e.suptitle("Error")
-    plot_time(ax_e, time,error.reshape((1,-1)) )
+def plotPosition(directory, data):
 
-    print("Minimun error= "+ str(error.min()))
-    name = os.path.join(directory ,"Error.pdf")
-    plt.savefig(name,bbox_inches='tight')
-    plt.close()
-
-    #  plot Velocities
-    labels = ["X","Y","Z","Yaw"]
-    fig_v, ax_v = plt.subplots(nrows = 1, figsize=(5,5))
-    fig_v.suptitle("Velocities")
-    symbols = plot_time(ax_v, time, velocities, color_offset = 1)
-    ax_v.legend(symbols,labels, loc=1)
-    ax_v.set_ylim([-.5,.5])
-    # plt.show()
-    name = os.path.join(directory ,"Velocities.pdf")
-    plt.savefig(name,bbox_inches='tight')
-    plt.close()
+    time = data[0,:]
+    positions = data[1:,:]
 
     #  plot positions
     labels = ["X","Y","Z","Yaw"]
@@ -252,7 +230,41 @@ def plot(directory, state):
     plt.savefig(name,bbox_inches='tight')
     plt.close()
 
+def plotVel(directory, data):
 
+    time = data[0,:]
+    velocities = data[1:,:]
+
+
+
+    #  plot Velocities
+    labels = ["X","Y","Z","Yaw"]
+    fig_v, ax_v = plt.subplots(nrows = 1, figsize=(5,5))
+    fig_v.suptitle("Velocities")
+    symbols = plot_time(ax_v, time, velocities, color_offset = 1)
+    ax_v.legend(symbols,labels, loc=1)
+    ax_v.set_ylim([-.5,.5])
+    # plt.show()
+    name = os.path.join(directory ,"Velocities.pdf")
+    plt.savefig(name,bbox_inches='tight')
+    plt.close()
+
+
+def plotNErr(directory, data):
+
+    time = data[0,:]
+    error = data[1,:]
+
+
+        #   Plot error
+    fig_e, ax_e = plt.subplots( figsize=(6,2))
+    fig_e.suptitle("Error")
+    plot_time(ax_e, time,error.reshape((1,-1)) )
+
+    print("Minimun error= "+ str(error.min()))
+    name = os.path.join(directory ,"Error.pdf")
+    plt.savefig(name,bbox_inches='tight')
+    plt.close()
 
 def plotError(directory,error):
 
@@ -431,111 +443,147 @@ def read_data(directory):
     d = 8
     _i = 4
     
-    name = os.path.join(directory ,"state.dat")
-    length = os.path.getsize(name)
+    name = os.path.join(directory ,"position.dat")
+    position = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                rows = (length) / (5* d)
+                rows = int(np.floor(rows))
+                position = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 5*rows)
+                position = position.reshape((rows,5))
+                position = position.T
+                position[0,:] -= position[0,0]
 
-    with open(name, 'rb') as fileH:
-        rows = (length) / (10* d)
-        rows = int(np.floor(rows))
-        state = np.fromfile(fileH,
-                                dtype = np.float64,
-                                count = 10*rows)
-        state = state.reshape((rows,10))
-        state = state.T
-    state[0,:] -= state[0,0]
+    name = os.path.join(directory ,"velocities.dat")
+    velocities = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                rows = (length) / (5* d)
+                rows = int(np.floor(rows))
+                velocities = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 5*rows)
+                velocities = velocities.reshape((rows,5))
+                velocities = velocities.T
+                velocities[0,:] -= velocities[0,0]
+
+    name = os.path.join(directory ,"norm_error.dat")
+    n_e = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                rows = (length) / (2* d)
+                rows = int(np.floor(rows))
+                n_e = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 2*rows)
+                n_e = n_e.reshape((rows,2))
+                n_e = n_e.T
+                n_e[0,:] -= n_e[0,0]
 
     name = os.path.join(directory ,"arUcos.dat")
-    length = os.path.getsize(name)
+    arucos = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                size = d*9 + 8
+                rows = (length) / size
+                rows = int(np.floor(rows))
 
-    with open(name, 'rb') as fileH:
-        size = d*9 + 8
-        rows = (length) / size
-        rows = int(np.floor(rows))
+                arucos = {}
 
-        arucos = {}
-
-        for i in range (rows):
-            time = np.fromfile(fileH,
-                                dtype = np.float64,
-                                count = 1)
-            time = time[0]
-            idx = np.fromfile(fileH,
-                                dtype = np.int64,
-                                count = 1)
-            idx = idx[0]
-            # print(idx)
-            aruco = np.fromfile(fileH,
-                                dtype = np.float64,
-                                count = 8)
-            if idx in arucos:
-                arucos[idx]["t"].append(time)
-                arucos[idx]["v"] = np.concatenate([arucos[idx]["v"],aruco])
-            else:
-                _d = {"t":[time], "v":aruco}
-                arucos[idx] = _d
-        t0 = [ arucos[key]["t"][0] for  key in arucos]
-        t0 = min(t0)
-        for i in arucos:
-            arucos[i]["v"] = arucos[i]["v"].reshape((-1,8))
-            arucos[i]["v"] = arucos[i]["v"].T
-            arucos[i]["t"] = [t - t0 for t in arucos[i]["t"]]
+                for i in range (rows):
+                    time = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 1)
+                    time = time[0]
+                    idx = np.fromfile(fileH,
+                                        dtype = np.int64,
+                                        count = 1)
+                    idx = idx[0]
+                    # print(idx)
+                    aruco = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 8)
+                    if idx in arucos:
+                        arucos[idx]["t"].append(time)
+                        arucos[idx]["v"] = np.concatenate([arucos[idx]["v"],aruco])
+                    else:
+                        _d = {"t":[time], "v":aruco}
+                        arucos[idx] = _d
+                t0 = [ arucos[key]["t"][0] for  key in arucos]
+                t0 = min(t0)
+                for i in arucos:
+                    arucos[i]["v"] = arucos[i]["v"].reshape((-1,8))
+                    arucos[i]["v"] = arucos[i]["v"].T
+                    arucos[i]["t"] = [t - t0 for t in arucos[i]["t"]]
 
     name = os.path.join(directory ,"error.dat")
-    length = os.path.getsize(name)
+    error = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                size = 9*d + 8
+                rows = (length) / size
+                rows = int(np.floor(rows))
 
-    with open(name, 'rb') as fileH:
-        size = 9*d + 8
-        rows = (length) / size
-        rows = int(np.floor(rows))
+                error = {}
 
-        error = {}
+                for i in range (rows):
+                    time = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 1)
+                    time = time[0]
+                    idx = np.fromfile(fileH,
+                                        dtype = np.int64,
+                                        count = 1)
+                    idx = idx[0]
+                    _error = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 8)
+                    if (any(_error > 10)):
+                        print(_error)
+                    if idx in error:
+                        error[idx]["t"].append(time)
+                        error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
+                    else:
+                        _d = {"t":[time], "v":_error}
+                        error[idx] = _d
 
-        for i in range (rows):
-            time = np.fromfile(fileH,
-                                dtype = np.float64,
-                                count = 1)
-            time = time[0]
-            idx = np.fromfile(fileH,
-                                dtype = np.int64,
-                                count = 1)
-            idx = idx[0]
-            _error = np.fromfile(fileH,
-                                dtype = np.float64,
-                                count = 8)
-            if (any(_error > 10)):
-                print(_error)
-            if idx in error:
-                error[idx]["t"].append(time)
-                error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
-            else:
-                _d = {"t":[time], "v":_error}
-                error[idx] = _d
-
-        t0 = [ error[key]["t"][0] for  key in error]
-        t0 = min(t0)
-        for i in error:
-            error[i]["v"] = error[i]["v"].reshape((-1,8))
-            error[i]["v"] = error[i]["v"].T
-            error[i]["t"] = [t - t0 for t in error[i]["t"]]
+                t0 = [ error[key]["t"][0] for  key in error]
+                t0 = min(t0)
+                for i in error:
+                    error[i]["v"] = error[i]["v"].reshape((-1,8))
+                    error[i]["v"] = error[i]["v"].T
+                    error[i]["t"] = [t - t0 for t in error[i]["t"]]
 
     name = os.path.join(directory ,"log.dat")
     log = None
     if os.path.exists(name):
         length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                #   header
+                size = 1+6    # 6 dof only singular values
+                rows = (length) / (size* d)
+                rows = int(np.floor(rows))
+                log = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = size*rows)
+                log = log.reshape((rows,size))
+                log = log.T
+            log[0,:] -= log[0,0]
 
-        with open(name, 'rb') as fileH:
-            #   header
-            size = 1+6    # 6 dof only singular values
-            rows = (length) / (size* d)
-            rows = int(np.floor(rows))
-            log = np.fromfile(fileH,
-                                    dtype = np.float64,
-                                    count = size*rows)
-            log = log.reshape((rows,size))
-            log = log.T
-        log[0,:] -= log[0,0]
-
-    return state, arucos, error, log
+    return position, velocities, n_e, arucos, error, log
 
  #      -----------------------------------------------------------
  #      -----------------------------------------------------------
@@ -552,22 +600,33 @@ def main(arg):
     markers = markers_list.index(arg.markers)
     directory = arg.directory
 
-    state, arucos, error, log = read_data(directory)
+    #   TODO: revisar tamaño del archivo
+    position, velocities, n_e, arucos, error, log = read_data(directory)
 
     s_ref = get_reference(arg.reference,
                           markers = markers,
                           out_directory = directory )
     print(s_ref)
-    print("Ploting VELOCITIES ")
-    plot(directory, state)
-    print("Ploting ArUcos")
-    plotArucos(directory,  arucos, s_ref)
-    print("Ploting Error")
-    plotError(directory, error)
-    print("Ploting 3D")
-    plot3D(directory, state, pd )
-    print("Ploting LOG")
-    plotLog(directory, log )
+    if not n_e is None:
+        print("Ploting  ")
+        plotNErr(directory, n_e)
+    if not velocities is None:
+        print("Ploting VELOCITIES ")
+        plotVel(directory, velocities)
+    if not arucos is None:
+        print("Ploting ArUcos")
+        plotArucos(directory,  arucos, s_ref)
+    if not error is None:
+        print("Ploting Error")
+        plotError(directory, error)
+    if not position is None:
+        print("Ploting 3D")
+        plot3D(directory, position, pd )
+        plotPosition(directory, position)
+
+    if not log is None:
+        print("Ploting LOG")
+        plotLog(directory, log )
 
 
 if __name__ ==  "__main__":
