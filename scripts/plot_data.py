@@ -243,7 +243,7 @@ def plotVel(directory, data):
     fig_v.suptitle("Velocities")
     symbols = plot_time(ax_v, time, velocities, color_offset = 1)
     ax_v.legend(symbols,labels, loc=1)
-    ax_v.set_ylim([-.5,.5])
+    ax_v.set_ylim([-.15,.15])
     # plt.show()
     name = os.path.join(directory ,"Velocities.pdf")
     plt.savefig(name,bbox_inches='tight')
