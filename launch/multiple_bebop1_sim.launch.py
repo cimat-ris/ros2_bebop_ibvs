@@ -28,23 +28,42 @@ def generate_launch_description():
     # Lanzar el puente ROS-Gazebo
     bridge = []
     models = []
-    for i in range(4):
+    for i in range(1):
+
         ros_gz_bridge = Node(
             package='ros_gz_bridge',
             executable='parameter_bridge',
-            name='ros_gz_bridge_'+str(i),
+            name = 'parrot_bebop_2_'+str(i),
             output='screen',
             parameters=[{
                 'expand_gz_topic_names': True,  # Activate the expand_gz_topic_names parameter
-                'config_file': os.path.join(pkg_bebop_ibvs, 'config', 'bebop1.yaml'),
+                'config_file': os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml'),
             }],
         )
         bridge.append(ros_gz_bridge)
 
+        ros_img_bridge = Node(
+             package='ros_gz_image',
+            executable='image_bridge',
+            arguments=[f"/world/default/model/parrot_bebop_2_{i}/link/body/sensor/rgb_camera_sensor/image"],
+            output='screen',
+        )
 
-        #   TODO: Loop
+        # ros_img_bridge = Node(
+        #     package='ros_gz_bridge',
+        #     executable='parameter_bridge',
+        #     name = 'world',
+        #     output='screen',
+        #     parameters=[{
+        #         'expand_gz_topic_names': True,  # Activate the expand_gz_topic_names parameter
+        #         'config_file': os.path.join(pkg_bebop_ibvs, 'config', 'image.yaml'),
+        #     }],
+        # )
+        bridge.append(ros_img_bridge)
+
         #   Spawn bebop
         bebop_model = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2","model.sdf")
+        # bebop_param = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2","model.xml")
         bebop_spawn = Node(
             package='ros_gz_sim',
             executable='create',
@@ -52,6 +71,7 @@ def generate_launch_description():
                 '-name', 'parrot_bebop_2_'+str(i),
                 '-world', 'default',
                 '-file', bebop_model,
+                # '-param', bebop_param,
                 '-x', str(-i),
                 '-y', '-1.',
                 '-z', '0.1',
@@ -62,28 +82,27 @@ def generate_launch_description():
         models.append(bebop_spawn)
 
 
-    # #   IBFC
-    # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'control_sim.yaml')
-    # with open(yaml_control, 'r') as file:
-    #     config = yaml.safe_load(file)
-    # # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_4_2.png')
-    # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_2_flat.png')
-    # # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_1_aruco.png')
-    # if not os.path.exists(config["ref_image"]):
-    #     print(f"Camara reference {config["ref_image"]} does not exists")
-    #     return
-    #
-    # if not os.path.exists(config["output"]):
-    #     print(f"Output directory  {config["output"]} does not exists")
-    #     return
-    #
-    # controller = Node(
-    #         package='ros2_bebop_ibvs',
-    #         executable='ibvs_sim',
-    #         name='ibvs',
-    #         output='screen',
-    #         parameters=[config]
-    #     )
+        # #   IBFC
+        # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'ibfc_sim.yaml')
+        # with open(yaml_control, 'r') as file:
+        #     config = yaml.safe_load(file)
+        # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_flat_'+str(i)+'.png')
+        # config["label"] = i
+        # if not os.path.exists(config["ref_image"]):
+        #     print(f"Camara reference {config["ref_image"]} does not exists")
+        #     return
+        #
+        # if not os.path.exists(config["output"]):
+        #     print(f"Output directory  {config["output"]} does not exists")
+        #     return
+        #
+        # controller = Node(
+        #         package='ros2_bebop_ibvs',
+        #         executable='ibfc_sim',
+        #         name='ibfc_'+str(i),
+        #         output='screen',
+        #         parameters=[config]
+            # )
 
     _des = [
         gz_sim,

@@ -27,7 +27,10 @@ sudo add-apt-repository universe
 export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
 curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
 sudo dpkg -i /tmp/ros2-apt-source.deb
+sudo apt update
 
+sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2-latest.list'
+ curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
 sudo apt update
 sudo apt upgrade
 
@@ -44,6 +47,8 @@ Install gazebo
 sudo curl https://packages.osrfoundation.org/gazebo.gpg --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-prerelease $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-prerelease.list > /dev/null
+
+
 sudo apt-get update
 sudo apt-get install gz-jetty  ros-rolling-ros-gz-bridge  ros-rolling-ros-gz-sim
 ```
@@ -126,7 +131,7 @@ export GZ_VERSION=jetty
 
 
 
-# Example
+# Simulation or a single agent IBVS
 
 ```bash
 # screen 1
@@ -151,7 +156,32 @@ alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITA
 ```
 
 
-#   Real Bebop
+# Simulation of multiple agents IBVS - Formation Control
+
+```bash
+# screen 1
+ros2 launch ros2_bebop_ibvs multiple_bebop1_sim.launch.py
+# screen 2
+ros2 run rqt_image_view rqt_image_view
+# screen 3
+ros2 topic pub  /state std_msgs/Int32 "{data: 2}" --once #  TAKEOFF
+ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
+ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
+ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
+ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
+```
+
+For simplicity the following aliases can be defined
+```bash
+alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TAKEOFF
+alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
+alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
+alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
+alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
+```
+
+
+#   IBVS with real Bebop
 
 
 ```bash
@@ -161,6 +191,7 @@ ros2 launch ros2_bebop_driver bebop_node_launch.xml ip:="192.168.42.1"
 
 #   Screen 2 (Emergency stop)
 ros2 topic pub --once bebop/reset std_msgs/Empty
+ros2 topic pub --once bebop/land std_msgs/Empty
 
 #   Screen 3
 ros2 run rqt_image_view rqt_image_view
@@ -193,6 +224,7 @@ ps | grep dragon
 # Reiniciar driver
 /usr/bin/dragon-prog -S 0 &
 ```
+
 
 #   Plot data
 
