@@ -102,7 +102,7 @@ class Controller(Node):
         
         # Parameters
         self.declare_parameter('frequency', 50.0)
-        self.declare_parameter('robot_name', 'bebop')
+        self.declare_parameter('robot_name_prefix', 'bebop')
         self.declare_parameter('takeoff_threshold', 0.04)
         self.declare_parameter('landing_threshold', 0.08)
         self.declare_parameter('takeoff_height', 1.0)
@@ -119,7 +119,7 @@ class Controller(Node):
         self.declare_parameter('save_log', False)
         
         self.frequency = self.get_parameter('frequency').value
-        self.robot_name = self.get_parameter('robot_name').value.strip()
+        self.robot_name = self.get_parameter('robot_name_prefix').value.strip()
         self.takeoff_threshold = self.get_parameter('takeoff_threshold').value
         self.landing_threshold = self.get_parameter('landing_threshold').value
         self.takeoff_height = self.get_parameter('takeoff_height').value
@@ -147,7 +147,7 @@ class Controller(Node):
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
             self.robot_name = 'bebop'
-        self.get_logger().info(f"Robot Name: {self.robot_name}")
+        self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
 
         #   Reference image
         image_ref = cv2.imread(self.ref_image)
@@ -177,26 +177,26 @@ class Controller(Node):
         #   Publishers
         qos = QoSProfile(depth=2)
         self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}/cmd_vel",
+                                             f"/{self.robot_name}_{self.label}/cmd_vel",
                                              qos)
         self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}/enable",
+                                                f"/{self.robot_name}_{self.label}/enable",
                                                 qos)
 
         #   Image bridge
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
         self.image_subscription = self.create_subscription(
-            Image, '/camera/image_raw',
+            Image, f"/world/default/model/{self.robot_name}_{self.label}/link/body/sensor/rgb_camera_sensor/image",
             self.image_recv,
             img_qos)
         self.image_pub = self.create_publisher(Image,
-                                               '/matching',
+                                                f"/world/default/model/{self.robot_name}_{self.label}/matching",
                                                img_qos)
 
         #   Subscriptions
         self.pos_sub = self.create_subscription(Pose,
-                                                f"/parrot_bebop_2/pose",
+                                                f"/{self.robot_name}_{self.label}/pose",
                                                 self.pos_changed,
                                                 qos)
         self.state_sub = self.create_subscription(Int32,
@@ -205,22 +205,22 @@ class Controller(Node):
                                                   qos)
         
         #   output files for data storage:
-        self.position_d = os.path.join(self.output, "position.dat")
+        self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
         with open(self.position_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.vel_d = os.path.join(self.output, "velocities.dat")
+        self.vel_d = os.path.join(self.output, f"velocities{self.label}.dat")
         with open(self.vel_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.norm_e_d = os.path.join(self.output, "norm_error.dat")
+        self.norm_e_d = os.path.join(self.output, f"norm_error{self.label}.dat")
         with open(self.norm_e_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.arucos_d = os.path.join(self.output, "arUcos.dat")
+        self.arucos_d = os.path.join(self.output, f"arUcos{self.label}.dat")
         with open(self.arucos_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.error_d = os.path.join(self.output, "error.dat")
+        self.error_d = os.path.join(self.output, f"error{self.label}.dat")
         with open(self.error_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.log_d = os.path.join(self.output, "log.dat")
+        self.log_d = os.path.join(self.output, f"log{self.label}.dat")
         with open(self.log_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
 

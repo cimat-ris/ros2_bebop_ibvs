@@ -3,6 +3,7 @@ from launch.actions import IncludeLaunchDescription, ExecuteProcess, DeclareLaun
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+# from ros_gz_bridge.actions import RosGzBridge
 import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -28,7 +29,14 @@ def generate_launch_description():
     # Lanzar el puente ROS-Gazebo
     bridge = []
     models = []
-    for i in range(1):
+    controller = []
+    # ros_gz_bridge = RosGzBridge(
+    #     bridge_name='ros_gz_bridge',
+    #     config_file=os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml'),
+    # )
+    # bridge.append(ros_gz_bridge)
+
+    for i in range(2):
 
         ros_gz_bridge = Node(
             package='ros_gz_bridge',
@@ -83,26 +91,27 @@ def generate_launch_description():
 
 
         # #   IBFC
-        # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'ibfc_sim.yaml')
-        # with open(yaml_control, 'r') as file:
-        #     config = yaml.safe_load(file)
-        # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_flat_'+str(i)+'.png')
-        # config["label"] = i
-        # if not os.path.exists(config["ref_image"]):
-        #     print(f"Camara reference {config["ref_image"]} does not exists")
-        #     return
-        #
-        # if not os.path.exists(config["output"]):
-        #     print(f"Output directory  {config["output"]} does not exists")
-        #     return
-        #
-        # controller = Node(
-        #         package='ros2_bebop_ibvs',
-        #         executable='ibfc_sim',
-        #         name='ibfc_'+str(i),
-        #         output='screen',
-        #         parameters=[config]
-            # )
+        yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'ibfc_sim.yaml')
+        with open(yaml_control, 'r') as file:
+            config = yaml.safe_load(file)
+        config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_f_'+str(i)+'.png')
+        config["label"] = i
+        if not os.path.exists(config["ref_image"]):
+            print(f"Camara reference {config["ref_image"]} does not exists")
+            return
+
+        if not os.path.exists(config["output"]):
+            print(f"Output directory  {config["output"]} does not exists")
+            return
+
+        _controller = Node(
+                package='ros2_bebop_ibvs',
+                executable='ibfc_sim',
+                name='ibfc_'+str(i),
+                output='screen',
+                parameters=[config]
+            )
+        controller.append(_controller)
 
     _des = [
         gz_sim,
@@ -111,4 +120,4 @@ def generate_launch_description():
         # controller,
     ]
 
-    return LaunchDescription(_des + bridge + models)
+    return LaunchDescription(_des + models + bridge + controller)

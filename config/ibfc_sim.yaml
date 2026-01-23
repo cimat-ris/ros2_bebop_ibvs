@@ -7,7 +7,7 @@ p0: [2., -1.,2., 1.9708,
      1., -1.,1., 1.9708]
 
 frequency: 30.
-robot_name: "bebop1"
+robot_name_prefix: "parrot_bebop_2"
 takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
