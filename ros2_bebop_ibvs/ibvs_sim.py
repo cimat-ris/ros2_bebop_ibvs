@@ -183,16 +183,16 @@ class Controller(Node):
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
         self.image_subscription = self.create_subscription(
-            Image, '/camera/image_raw',
+            Image, f"/{self.robot_name}/image",
             self.image_recv,
             img_qos)
         self.image_pub = self.create_publisher(Image,
-                                               '/matching',
+                                               f"/{self.robot_name}/matching",
                                                img_qos)
 
         #   Subscriptions
         self.pos_sub = self.create_subscription(Pose,
-                                                f"/parrot_bebop_2/pose",
+                                                f"/{self.robot_name}/pose",
                                                 self.pos_changed,
                                                 qos)
         self.state_sub = self.create_subscription(Int32,

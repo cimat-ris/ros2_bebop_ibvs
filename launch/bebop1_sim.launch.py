@@ -4,6 +4,7 @@ from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ros_gz_bridge.actions import RosGzBridge
 from launch_ros.actions import Node
+from string import Template
 import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -36,13 +37,16 @@ def generate_launch_description():
 
     #   Spawn bebop
     bebop_model = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2","model.sdf")
+    with open(bebop_model, "r") as infp:
+            robot_desc = infp.read()
+    rd_template = Template(robot_desc) # convert string in template
     bebop_spawn = Node(
         package='ros_gz_sim',
         executable='create',
         arguments=[
             '-name', 'parrot_bebop_2',
             '-world', 'default',
-            '-file', bebop_model,
+            "-string", rd_template.substitute(prefix=f"parrot_bebop_2"),
             '-x', '-1.',
             '-y', '-1.',
             '-z', '0.1',

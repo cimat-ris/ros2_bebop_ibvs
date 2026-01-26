@@ -3,6 +3,7 @@ from launch.actions import IncludeLaunchDescription, ExecuteProcess, DeclareLaun
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+from string import Template
 # from ros_gz_bridge.actions import RosGzBridge
 import os
 import yaml
@@ -30,6 +31,7 @@ def generate_launch_description():
     bridge = []
     models = []
     controller = []
+
     # ros_gz_bridge = RosGzBridge(
     #     bridge_name='ros_gz_bridge',
     #     config_file=os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml'),
@@ -53,33 +55,24 @@ def generate_launch_description():
         ros_img_bridge = Node(
              package='ros_gz_image',
             executable='image_bridge',
-            arguments=[f"/world/default/model/parrot_bebop_2_{i}/link/body/sensor/rgb_camera_sensor/image"],
+            arguments=[f"/parrot_bebop_2_{i}/image"],
             output='screen',
         )
 
-        # ros_img_bridge = Node(
-        #     package='ros_gz_bridge',
-        #     executable='parameter_bridge',
-        #     name = 'world',
-        #     output='screen',
-        #     parameters=[{
-        #         'expand_gz_topic_names': True,  # Activate the expand_gz_topic_names parameter
-        #         'config_file': os.path.join(pkg_bebop_ibvs, 'config', 'image.yaml'),
-        #     }],
-        # )
         bridge.append(ros_img_bridge)
 
         #   Spawn bebop
         bebop_model = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2","model.sdf")
-        # bebop_param = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2","model.xml")
+        with open(bebop_model, "r") as infp:
+            robot_desc = infp.read()
+        rd_template = Template(robot_desc) # convert string in template
         bebop_spawn = Node(
             package='ros_gz_sim',
             executable='create',
             arguments=[
                 '-name', 'parrot_bebop_2_'+str(i),
                 '-world', 'default',
-                '-file', bebop_model,
-                # '-param', bebop_param,
+                '-string', rd_template.substitute(prefix=f"parrot_bebop_2_{i}"),
                 '-x', str(-i),
                 '-y', '-1.',
                 '-z', '0.1',

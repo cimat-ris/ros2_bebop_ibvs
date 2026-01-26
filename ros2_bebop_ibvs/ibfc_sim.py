@@ -182,16 +182,16 @@ class Controller(Node):
         self.cmd_enable = self.create_publisher(Bool,
                                                 f"/{self.robot_name}_{self.label}/enable",
                                                 qos)
-
+        self.get_logger().info(f"control: /{self.robot_name}_{self.label}/cmd_vel")
         #   Image bridge
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
         self.image_subscription = self.create_subscription(
-            Image, f"/world/default/model/{self.robot_name}_{self.label}/link/body/sensor/rgb_camera_sensor/image",
+            Image, f"/{self.robot_name}_{self.label}/image",
             self.image_recv,
             img_qos)
         self.image_pub = self.create_publisher(Image,
-                                                f"/world/default/model/{self.robot_name}_{self.label}/matching",
+                                                f"/{self.robot_name}_{self.label}/matching",
                                                img_qos)
 
         #   Subscriptions

@@ -160,24 +160,24 @@ alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITA
 
 ```bash
 # screen 1
-ros2 launch ros2_bebop_ibvs multiple_bebop1_sim.launch.py
+ros2 launch timeout 4s ros2_bebop_ibvs multiple_bebop1_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
-ros2 topic pub  /state std_msgs/Int32 "{data: 2}" --once #  TAKEOFF
-ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
-ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
-ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
-ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
+timeout 4s ros2 topic pub  /state std_msgs/Int32 "{data: 2}"  #  TAKEOFF
+timeout 4s ros2 topic pub  /state std_msgs/Int32 "{data: 3}"  #  LAND
+timeout 4s ros2 topic pub  /state std_msgs/Int32 "{data: 1}"  #  IBVS
+timeout 4s ros2 topic pub  /state std_msgs/Int32 "{data: 4}"  #  STOP
+timeout 4s ros2 topic pub  /state std_msgs/Int32 "{data: 5}"  #  INITAL CONDITION
 ```
 
 For simplicity the following aliases can be defined
 ```bash
-alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TAKEOFF
-alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
-alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
-alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
-alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
+alias takeoff="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" " #  TAKEOFF
+alias land="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" " #  LAND
+alias ibvs="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" " #  IBVS
+alias stop="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" " #  STOP
+alias init="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
 ```
 
 
