@@ -7,6 +7,7 @@ from geometry_msgs.msg import Twist, Pose
 from std_msgs.msg import Bool, Int32
 from std_srvs.srv import Empty
 from sensor_msgs.msg import Image
+from formation_interfaces.msg import Corners
 
 from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
@@ -17,7 +18,7 @@ import struct
 import os
 
 IDLE = 0
-IBVS = 1
+IBFC = 1
 TAKEOFF = 2
 LANDING = 3
 STOP = 4
@@ -107,6 +108,7 @@ class Controller(Node):
         self.declare_parameter('landing_threshold', 0.08)
         self.declare_parameter('takeoff_height', 1.0)
         self.declare_parameter('label', 1)
+        self.declare_parameter('n_agents', 1)
         self.declare_parameter('ref_image', "reference.png")
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
@@ -124,6 +126,7 @@ class Controller(Node):
         self.landing_threshold = self.get_parameter('landing_threshold').value
         self.takeoff_height = self.get_parameter('takeoff_height').value
         self.label = self.get_parameter('label').value
+        self.n_agents = self.get_parameter('n_agents').value
         self.ref_image = self.get_parameter('ref_image').value
         self.output = self.get_parameter('output').value
         self.img_depth = self.get_parameter('img_depth').value
@@ -135,8 +138,10 @@ class Controller(Node):
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
 
-
-        self.initial_cond =  np.array(self.initial_cond[self.label*4: (self.label+1)*4])
+        #   inital conditions
+        self.initial_cond =  np.array(self.initial_cond)
+        self.initial_cond = self.initial_cond.reshape((-1,4))
+        self.initial_cond = self.initial_cond[self.label].reshape(-1)
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
@@ -149,23 +154,32 @@ class Controller(Node):
             self.robot_name = 'bebop'
         self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
 
-        #   Reference image
-        image_ref = cv2.imread(self.ref_image)
-        if  image_ref is None :
-            self.get_logger.error(f"Image {self.ref_image} could not be read ")
-            return
-        gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+        #   Detector
         aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
         parameters = cv2.aruco.DetectorParameters()
         self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
-        self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
-        if self.ids_ref is None:
-            self.get_logger.error(f"No detected Markers")
-            return
-        self._ids_ref = self.ids_ref.tolist()
-        cv2.aruco.drawDetectedMarkers(image_ref, self.corners_ref, self.ids_ref,
-                                        borderColor = (100,1.,0.) )
-        cv2.imwrite("reference_proc.png", image_ref)
+
+        #   Reference image
+        self.corners_ref = []
+        self.ids_ref = []
+        self._ids_ref = []
+        for i in range(self.n_agents):
+            image_ref = cv2.imread(self.ref_image)
+            if  image_ref is None :
+                self.get_logger.error(f"Image {self.ref_image} could not be read ")
+                return
+            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+
+            corners_ref, ids_ref, rejected = self.detector.detectMarkers(gray_image)
+            if ids_ref is None:
+                self.get_logger.error(f"No detected Markers")
+                return
+            self.corners_ref.append(corners_ref)
+            self.ids_ref.append(ids_ref)
+            self._ids_ref.append(ids_ref.tolist())
+            cv2.aruco.drawDetectedMarkers(image_ref, corners_ref, ids_ref,
+                                         borderColor = (100,1.,0.) )
+            cv2.imwrite(f"reference_proc_{self.label}_{i}.png", image_ref)
         self.points = None
 
         #   Camera and robot transformations
@@ -203,24 +217,36 @@ class Controller(Node):
                                                   "/state",
                                                   self.state_changed,
                                                   qos)
+
+        #   Network
+        #   TODO: Flexible connectivity
+        self.features_pub = self.create_publisher(Corners,
+                                             f"/{self.robot_name}_{self.label}/ArUcos",
+                                             qos)
+        for i in range(self.n_agents):
+            if i != self.label:
+                self.features_sub = self.create_subscription(Corners,
+                                             f"/{self.robot_name}_{i}/ArUcos",
+                                             self.feature_receiver,
+                                             qos)
         
         #   output files for data storage:
         self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
         with open(self.position_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.vel_d = os.path.join(self.output, f"velocities{self.label}.dat")
+        self.vel_d = os.path.join(self.output, f"velocities_{self.label}.dat")
         with open(self.vel_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.norm_e_d = os.path.join(self.output, f"norm_error{self.label}.dat")
+        self.norm_e_d = os.path.join(self.output, f"norm_error_{self.label}.dat")
         with open(self.norm_e_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.arucos_d = os.path.join(self.output, f"arUcos{self.label}.dat")
+        self.arucos_d = os.path.join(self.output, f"arUcos_{self.label}.dat")
         with open(self.arucos_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.error_d = os.path.join(self.output, f"error{self.label}.dat")
+        self.error_d = os.path.join(self.output, f"error_{self.label}.dat")
         with open(self.error_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.log_d = os.path.join(self.output, f"log{self.label}.dat")
+        self.log_d = os.path.join(self.output, f"log_{self.label}.dat")
         with open(self.log_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
 
@@ -289,14 +315,14 @@ class Controller(Node):
         self.ids = []
         # self.get_logger().info(str(ids.shape[0]))
         for i in range(ids.shape[0]):
-            if ids[i,0] in self._ids_ref:
-                idx = self._ids_ref.index(ids[i,0])
+            if ids[i,0] in self._ids_ref[self.label]:
+                idx = self._ids_ref[self.label].index(ids[i,0])
                 _p = np.concatenate ((_p, corners[i].reshape(-1 )))
-                _p_ref = np.concatenate ((_p_ref, self.corners_ref[idx].reshape(-1) ))
+                _p_ref = np.concatenate ((_p_ref, self.corners_ref[self.label][idx].reshape(-1) ))
                 self.ids.append(ids[i,0])
 
         if _p.shape[0] == 0:
-            self.get_logger().warning(f"Matching Failed {self._ids_ref} {ids.tolist()}")
+            self.get_logger().warning(f"Matching Failed {self._ids_ref[self.label]} {ids.tolist()}")
             return
         self.p = _p.reshape((-1,2))
         _p_ref = _p_ref.reshape((-1,2))
@@ -320,7 +346,7 @@ class Controller(Node):
         # print(ids)
         cv2.aruco.drawDetectedMarkers(_image, corners, ids,
                                         borderColor = (0,100,0.) )
-        cv2.aruco.drawDetectedMarkers(_image, self.corners_ref, self.ids_ref,
+        cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label], self.ids_ref[self.label],
                                         borderColor = (100,1.,0.) )
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
@@ -379,6 +405,11 @@ class Controller(Node):
             # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
             f.write(binary)
 
+    def feature_receiver(self, msg):
+
+        j = msg.j
+        arucos = msg.arucos
+
     def control_loop(self):
 
         if self.state == IDLE:
@@ -407,11 +438,11 @@ class Controller(Node):
 
             self.get_logger().debug(f"Control input: {msg.linear.z}")
             #   Change state
-            if self.new_state == IBVS and self.takeoff_complete:
-                self.get_logger().info("State change: IBVS")
-                self.state = IBVS
-            elif self.new_state == IBVS and  not self.takeoff_complete:
-                self.get_logger().info("Waiting for TAKEOFF to finish, can not change to IBVS")
+            if self.new_state == IBFC and self.takeoff_complete:
+                self.get_logger().info("State change: IBFC")
+                self.state = IBFC
+            elif self.new_state == IBFC and  not self.takeoff_complete:
+                self.get_logger().info("Waiting for TAKEOFF to finish, can not change to IBFC")
                 self.new_state == TAKEOFF
             elif self.new_state == LANDING:
                 self.get_logger().info("State change: LANDING")
@@ -461,11 +492,11 @@ class Controller(Node):
 
             self.get_logger().debug(f"Control input: {_u}")
             #   Change state
-            if self.new_state == IBVS and self.init_complete:
-                self.get_logger().info("State change: IBVS")
-                self.state = IBVS
-            elif self.new_state == IBVS and  not self.init_complete:
-                self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to IBVS")
+            if self.new_state == IBFC and self.init_complete:
+                self.get_logger().info("State change: IBFC")
+                self.state = IBFC
+            elif self.new_state == IBFC and  not self.init_complete:
+                self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to IBFC")
             elif self.new_state == LANDING:
                 self.get_logger().info("State change: LANDING")
                 self.state = LANDING
@@ -499,7 +530,7 @@ class Controller(Node):
                 self.state = STOP
 
 
-        elif self.state == IBVS and self.points is None:
+        elif self.state == IBFC and self.points is None:
 
             self.get_logger().error("Image error can not be computed")
 
@@ -510,7 +541,7 @@ class Controller(Node):
                 self.cmd_pub.publish(self.m_vel)
 
             except Exception as e:
-                self.get_logger().error(f"Error with IBVS control: {str(e)}")
+                self.get_logger().error(f"Error with IBFC control: {str(e)}")
                 self.enable = False
                 self.cmd_enable.publish(Bool(data=self.enable))
             #   Change state
@@ -525,96 +556,96 @@ class Controller(Node):
                 self.state = INITCOND
                 self.init_complete = False
 
-        elif self.state == IBVS:
-            # #   IBVS
-            # self.error = self.points - self.points_ref
-            # if self.enable_polar:
-            #     select = (abs(self.error[1,:]) > np.pi)
-            #     # self.get_logger().info(f"{select}")
-            #     self.error[1,select] = -1.* np.sign(self.error[1,select]) * (2*np.pi - abs(self.error[1,select]))
-            #
-            #     # self.error[1,self.error[1,:] < np.pi] += 2*np.pi
-            #     # self.error[1,self.error[1,:] > np.pi] -= 2*np.pi
-            #
-            #
-            # # self.get_logger().info(f"Norm(s^*) = \n{self.points_ref}")
-            # # self.get_logger().info(f"Norm(s) = \n{self.points}")
-            # # self.get_logger().info(f"s^* = \n{self.corners_ref[0]}")
-            # #   TODO: depth?
-            # if self.enable_polar:
-            #     self.L = interaction_matrix_polar(self.points, self.img_depth)
-            #     # self.L = interaction_matrix_polar(self.points_ref, self.img_depth)
-            # else:
-            #     self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
-            #     # self.L = interaction_matrix_y(self.points, self.img_depth)
-            #     # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
-            # # self.get_logger().info( f"L: : {self.L}")
-            # L_inv = Inv_Moore_Penrose(self.L)
-            # if self.enable_log:
-            #     _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
-            #
-            # if L_inv is None:
-            #     self.get_logger().error("Invalid Ls matrix")
-            #     # self.u =  np.zeros(6)
-            #     self.cmd_pub.publish(self.m_vel)
-            #
-            # # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
-            # self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
-            #
-            #
-            # # if abs(self.u[1].T) > 0.05 :
-            # # self.get_logger().info( f"L: : {L_inv}")
-            # # self.get_logger().info( f"Control_c y : {self._u.T}")
-            # # self.get_logger().info( f"Error: {self.error}")
-            # # self.get_logger().info( f"Error: {self.error.T.reshape((-1,1)).T}")
-            #
-            # #   Transformation camera -> robot
-            #
-            # #   6DOF
-            # _w = self.R_cam @ self._u[3:]
+        elif self.state == IBFC:
+            #   IBFC
+            self.error = self.points - self.points_ref
+            if self.enable_polar:
+                select = (abs(self.error[1,:]) > np.pi)
+                # self.get_logger().info(f"{select}")
+                self.error[1,select] = -1.* np.sign(self.error[1,select]) * (2*np.pi - abs(self.error[1,select]))
+
+                # self.error[1,self.error[1,:] < np.pi] += 2*np.pi
+                # self.error[1,self.error[1,:] > np.pi] -= 2*np.pi
+
+
+            # self.get_logger().info(f"Norm(s^*) = \n{self.points_ref}")
+            # self.get_logger().info(f"Norm(s) = \n{self.points}")
+            # self.get_logger().info(f"s^* = \n{self.corners_ref[0]}")
+            #   TODO: depth?
+            if self.enable_polar:
+                self.L = interaction_matrix_polar(self.points, self.img_depth)
+                # self.L = interaction_matrix_polar(self.points_ref, self.img_depth)
+            else:
+                self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+                # self.L = interaction_matrix_y(self.points, self.img_depth)
+                # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
+            # self.get_logger().info( f"L: : {self.L}")
+            L_inv = Inv_Moore_Penrose(self.L)
+            if self.enable_log:
+                _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+
+            if L_inv is None:
+                self.get_logger().error("Invalid Ls matrix")
+                # self.u =  np.zeros(6)
+                self.cmd_pub.publish(self.m_vel)
+
+            # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+            self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+
+
+            # if abs(self.u[1].T) > 0.05 :
+            # self.get_logger().info( f"L: : {L_inv}")
+            # self.get_logger().info( f"Control_c y : {self._u.T}")
+            # self.get_logger().info( f"Error: {self.error}")
+            # self.get_logger().info( f"Error: {self.error.T.reshape((-1,1)).T}")
+
+            #   Transformation camera -> robot
+
+            #   6DOF
+            _w = self.R_cam @ self._u[3:]
+            _v = (self.R_cam @ self._u[:3]).reshape(-1)
+            _v += np.cross( self.t_cam , _w.reshape(-1) )
+            _w *= self.kw
+            self.u[:3] = _v.copy()
+            self.u[3:] = _w.reshape(-1)
+            #   4DOF
+            # _w = self.R_cam @ np.array([0.,self._u[3],0.])
             # _v = (self.R_cam @ self._u[:3]).reshape(-1)
             # _v += np.cross( self.t_cam , _w.reshape(-1) )
             # _w *= self.kw
             # self.u[:3] = _v.copy()
-            # self.u[3:] = _w.reshape(-1)
-            # #   4DOF
-            # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-            # # _v = (self.R_cam @ self._u[:3]).reshape(-1)
-            # # _v += np.cross( self.t_cam , _w.reshape(-1) )
-            # # _w *= self.kw
-            # # self.u[:3] = _v.copy()
-            # # self.u[3:] = _w.copy()
-            #
-            # # self.get_logger().info( f"Control_d: {self.u}")
-            #
-            # #   Send message
-            # # msg = Twist()
-            # # _norm = np.linalg.norm(self.u)
-            # # if  _norm > .2:
-            # #     self.u = .2 * self.u  / _norm
-            #
-            # self.m_vel.linear.x = float(self.u[0])
-            # self.m_vel.linear.y = float(self.u[1])
+            # self.u[3:] = _w.copy()
+
+            # self.get_logger().info( f"Control_d: {self.u}")
+
+            #   Send message
+            # msg = Twist()
+            # _norm = np.linalg.norm(self.u)
+            # if  _norm > .2:
+            #     self.u = .2 * self.u  / _norm
+
+            self.m_vel.linear.x = float(self.u[0])
+            self.m_vel.linear.y = float(self.u[1])
+            self.m_vel.linear.z = float(self.u[2])
+            self.m_vel.angular.z = float(self.u[5])
+            # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
+            self.cmd_pub.publish(self.m_vel)
+
+            #   BEGIN
+            # self.m_vel = Twist()
+            # # self.m_vel.linear.x = float(.1)
+            # # self.m_vel.linear.x = float(self.u[0])
+            # # self.m_vel.linear.y = float(-.1)
+            # # self.m_vel.linear.y = float(self.u[1])
             # self.m_vel.linear.z = float(self.u[2])
-            # self.m_vel.angular.z = float(self.u[5])
-            # # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
+            # # self.m_vel.angular.z = float(self.u[5])
             # self.cmd_pub.publish(self.m_vel)
-            #
-            # #   BEGIN
-            # # self.m_vel = Twist()
-            # # # self.m_vel.linear.x = float(.1)
-            # # # self.m_vel.linear.x = float(self.u[0])
-            # # # self.m_vel.linear.y = float(-.1)
-            # # # self.m_vel.linear.y = float(self.u[1])
-            # # self.m_vel.linear.z = float(self.u[2])
-            # # # self.m_vel.angular.z = float(self.u[5])
-            # # self.cmd_pub.publish(self.m_vel)
-            #
-            # #   END
-            #
-            # #   Save data
-            # self.save_data()
-            # self.data2save = True
+
+            #   END
+
+            #   Save data
+            self.save_data()
+            self.data2save = True
 
             #   Change state
             if self.new_state == LANDING:

@@ -175,7 +175,7 @@ For simplicity the following aliases can be defined
 ```bash
 alias takeoff="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" " #  TAKEOFF
 alias land="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" " #  LAND
-alias ibvs="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" " #  IBVS
+alias ibvs="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" " #  IBFC
 alias stop="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" " #  STOP
 alias init="timeout 4s ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
 ```
