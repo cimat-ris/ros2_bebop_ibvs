@@ -7,7 +7,7 @@ from geometry_msgs.msg import Twist, Pose
 from std_msgs.msg import Bool, Int32
 from std_srvs.srv import Empty
 from sensor_msgs.msg import Image
-from formation_interfaces.msg import Corners
+from formation_interfaces.msg import Corners, ArUco
 
 from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
@@ -160,9 +160,10 @@ class Controller(Node):
         self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
         #   Reference image
-        self.corners_ref = []
-        self.ids_ref = []
-        self._ids_ref = []
+        self.ids_ref = [None]* self.n_agents
+        self._ids_ref = [None]* self.n_agents
+        self.points_ref = [None]* self.n_agents
+        self.corners_ref = [None]* self.n_agents
         for i in range(self.n_agents):
             image_ref = cv2.imread(self.ref_image)
             if  image_ref is None :
@@ -174,13 +175,18 @@ class Controller(Node):
             if ids_ref is None:
                 self.get_logger.error(f"No detected Markers")
                 return
-            self.corners_ref.append(corners_ref)
-            self.ids_ref.append(ids_ref)
-            self._ids_ref.append(ids_ref.tolist())
+            self.corners_ref[i] = corners_ref
+            _corners_ref = np.array( corners_ref)
+            _corners_ref = _corners_ref.astype(float).reshape((-1,2)).T
+            self.points_ref[i] = self.normalize(_corners_ref)
+            self._ids_ref[i]  = ids_ref
+            self.ids_ref[i]  = [ j[0] for j in  ids_ref.tolist()]
             cv2.aruco.drawDetectedMarkers(image_ref, corners_ref, ids_ref,
                                          borderColor = (100,1.,0.) )
             cv2.imwrite(f"reference_proc_{self.label}_{i}.png", image_ref)
-        self.points = None
+        self.ids = [None]*self.n_agents
+        self.points = [None]*self.n_agents
+        self.p = None
 
         #   Camera and robot transformations
         self.R_cam = np.array([[0.,  0., 1.],
@@ -223,12 +229,16 @@ class Controller(Node):
         self.features_pub = self.create_publisher(Corners,
                                              f"/{self.robot_name}_{self.label}/ArUcos",
                                              qos)
+
+        #   TODO: Es necesaria la lista?
+        self.features_sub  = []
         for i in range(self.n_agents):
             if i != self.label:
-                self.features_sub = self.create_subscription(Corners,
-                                             f"/{self.robot_name}_{i}/ArUcos",
-                                             self.feature_receiver,
-                                             qos)
+                _sub = self.create_subscription(Corners,
+                                f"/{self.robot_name}_{i}/ArUcos",
+                                self.feature_receiver,
+                                qos)
+                self.features_sub.append(_sub)
         
         #   output files for data storage:
         self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
@@ -302,43 +312,24 @@ class Controller(Node):
             if self.found_arucos_w:
                 self.get_logger().warning("No ArUcos found in received image")
                 self.found_arucos_w = False
-            self.points = None
-            self.points_ref = None
             return
         if not self.found_arucos_w:
             self.get_logger().warning("ArUcos found in received image")
             self.found_arucos_w = True
 
         #   Pairing
-        _p = np.array([])
-        _p_ref = np.array([])
-        self.ids = []
-        # self.get_logger().info(str(ids.shape[0]))
-        for i in range(ids.shape[0]):
-            if ids[i,0] in self._ids_ref[self.label]:
-                idx = self._ids_ref[self.label].index(ids[i,0])
-                _p = np.concatenate ((_p, corners[i].reshape(-1 )))
-                _p_ref = np.concatenate ((_p_ref, self.corners_ref[self.label][idx].reshape(-1) ))
-                self.ids.append(ids[i,0])
-
-        if _p.shape[0] == 0:
-            self.get_logger().warning(f"Matching Failed {self._ids_ref[self.label]} {ids.tolist()}")
-            return
-        self.p = _p.reshape((-1,2))
-        _p_ref = _p_ref.reshape((-1,2))
-        # self.ids = np.array(self.ids, dtype = int)
-
+        self.ids[self.label] = [ i[0] for i in  ids.tolist()]
+        self.p = np.array(corners).reshape((-1,2))
         #   Normalize
-        self.points = self.normalize(self.p.astype(float).T)
-        self.points_ref = self.normalize(_p_ref.astype(float).T)
+        self.points[self.label] = self.normalize(self.p.astype(float).T)
 
-        if self.enable_polar:
-            _r = np.linalg.norm(self.points, axis = 0)
-            _t = np.arctan2(self.points[1,:], self.points[0,:])
-            self.points = np.c_[_r, _t].T
-            _r = np.linalg.norm(self.points_ref, axis = 0)
-            _t = np.arctan2(self.points_ref[1,:], self.points_ref[0,:])
-            self.points_ref = np.c_[_r, _t].T
+        # if self.enable_polar:
+        #     _r = np.linalg.norm(self.points, axis = 0)
+        #     _t = np.arctan2(self.points[1,:], self.points[0,:])
+        #     self.points = np.c_[_r, _t].T
+        #     _r = np.linalg.norm(self.points_ref, axis = 0)
+        #     _t = np.arctan2(self.points_ref[1,:], self.points_ref[0,:])
+        #     self.points_ref = np.c_[_r, _t].T
 
 
         #   Publish detection
@@ -346,7 +337,7 @@ class Controller(Node):
         # print(ids)
         cv2.aruco.drawDetectedMarkers(_image, corners, ids,
                                         borderColor = (0,100,0.) )
-        cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label], self.ids_ref[self.label],
+        cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label], self._ids_ref[self.label],
                                         borderColor = (100,1.,0.) )
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
@@ -372,26 +363,26 @@ class Controller(Node):
             f.write(binary)
 
 
-        with open(self.norm_e_d, 'ab') as f:
-            data = (t,np.linalg.norm(self.error))
-            binary = struct.pack('dd', *data)
-            f.write(binary)
-
-        with open(self.arucos_d, 'ab') as f:
-            for i in range(len(self.ids)):
-
-                data = (t, self.ids[i])
-                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
-                binary = struct.pack('didddddddd', *data)
-                f.write(binary)
-
-        with open(self.error_d, 'ab') as f:
-            for i in range(len(self.ids)):
-
-                data = (t, self.ids[i])
-                data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
-                binary = struct.pack('didddddddd', *data)
-                f.write(binary)
+        # with open(self.norm_e_d, 'ab') as f:
+        #     data = (t,np.linalg.norm(self.error))
+        #     binary = struct.pack('dd', *data)
+        #     f.write(binary)
+        #
+        # with open(self.arucos_d, 'ab') as f:
+        #     for i in range(len(self.ids)):
+        #
+        #         data = (t, self.ids[i])
+        #         data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
+        #         binary = struct.pack('didddddddd', *data)
+        #         f.write(binary)
+        #
+        # with open(self.error_d, 'ab') as f:
+        #     for i in range(len(self.ids)):
+        #
+        #         data = (t, self.ids[i])
+        #         data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
+        #         binary = struct.pack('didddddddd', *data)
+        #         f.write(binary)
 
         # save log
         if not self.enable_log:
@@ -407,10 +398,91 @@ class Controller(Node):
 
     def feature_receiver(self, msg):
 
+        #   TODO: include depth
+
         j = msg.j
-        arucos = msg.arucos
+        _size = msg.size
+        _depth = msg.depth
+        _points = []
+        _ids = []
+        for i in range(_size):
+            _ids.append(msg.arucos[i].id)
+            _points.append(msg.arucos[i].points[0].x)
+            _points.append(msg.arucos[i].points[0].y)
+            _points.append(msg.arucos[i].points[1].x)
+            _points.append(msg.arucos[i].points[1].y)
+            _points.append(msg.arucos[i].points[2].x)
+            _points.append(msg.arucos[i].points[2].y)
+            _points.append(msg.arucos[i].points[3].x)
+            _points.append(msg.arucos[i].points[3].y)
+        self.ids[j] = _ids
+
+        _points = np.array(_points)
+        _points = _points.reshape((-1,2)).astype(float).T
+        self.points[j] = self.normalize(_points)
+
+    def get_mathing(self, j):
+
+        # matching_elements = list(set(array1).intersection(set(array2)))
+        _query = set(self.ids[self.label])
+        _query = _query.intersection(set(self.ids_ref[self.label]))
+        _query = _query.intersection(set(self.ids[j]))
+        _query = _query.intersection(set(self.ids_ref[j]))
+        _query = list(set(_query))
+
+        self.get_logger().info(f"idx = {_query}")
+
+        if len(_query) == 0:
+            return [], [], [], []
+
+        match_1 = []
+        for q in _query:
+            k =  self.ids[self.label].index(q)
+            match_1 = match_1 + list(range(k*4, k*4 +4))
+
+        match_2 = []
+        for q in _query:
+            k =  self.ids[j].index(q)
+            match_2 = match_2 + list(range(k*4, k*4 +4))
+
+        match_3 = []
+        for q in _query:
+            k =  self.ids_ref[self.label].index(q)
+            match_3 = match_3 + list(range(k*4, k*4 +4))
+
+        match_4 = []
+        for q in _query:
+            k =  self.ids_ref[j].index(q)
+            match_4 = match_4 + list(range(k*4, k*4 +4))
+
+        return match_1, match_2, match_3, match_4
+
 
     def control_loop(self):
+
+        if not self.p is None:
+
+            msg = Corners()
+            msg.j = int(self.label)
+            _arucos = self.p.reshape((-1,8))
+            msg.size = int(_arucos.shape[0])
+            msg.depth = float(1.)
+            # _msg = []
+            for i in range(_arucos.shape[0]):
+                __msg = ArUco()
+                __msg.id = int( self.ids[self.label][i])
+                __msg.points[0].x = float(_arucos[i,0])
+                __msg.points[0].y = float(_arucos[i,1])
+                __msg.points[1].x = float(_arucos[i,2])
+                __msg.points[1].y = float(_arucos[i,3])
+                __msg.points[2].x = float(_arucos[i,4])
+                __msg.points[2].y = float(_arucos[i,5])
+                __msg.points[3].x = float(_arucos[i,6])
+                __msg.points[3].y = float(_arucos[i,7])
+                msg.arucos.append(__msg)
+
+            self.features_pub.publish(msg)
+
 
         if self.state == IDLE:
             #   Change state
@@ -557,49 +629,38 @@ class Controller(Node):
                 self.init_complete = False
 
         elif self.state == IBFC:
+
             #   IBFC
-            self.error = self.points - self.points_ref
-            if self.enable_polar:
-                select = (abs(self.error[1,:]) > np.pi)
-                # self.get_logger().info(f"{select}")
-                self.error[1,select] = -1.* np.sign(self.error[1,select]) * (2*np.pi - abs(self.error[1,select]))
+            self._u = np.zeros(6)
 
-                # self.error[1,self.error[1,:] < np.pi] += 2*np.pi
-                # self.error[1,self.error[1,:] > np.pi] -= 2*np.pi
+            if not self.points[self.label] is None:
+                for j in range(self.n_agents):
+                    if j != self. label and (not  self.points[j] is None):
 
+                        #   mask
+                        idi, idj, idir, idjr = self.get_mathing(j)
 
-            # self.get_logger().info(f"Norm(s^*) = \n{self.points_ref}")
-            # self.get_logger().info(f"Norm(s) = \n{self.points}")
-            # self.get_logger().info(f"s^* = \n{self.corners_ref[0]}")
-            #   TODO: depth?
-            if self.enable_polar:
-                self.L = interaction_matrix_polar(self.points, self.img_depth)
-                # self.L = interaction_matrix_polar(self.points_ref, self.img_depth)
-            else:
-                self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
-                # self.L = interaction_matrix_y(self.points, self.img_depth)
-                # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
-            # self.get_logger().info( f"L: : {self.L}")
-            L_inv = Inv_Moore_Penrose(self.L)
-            if self.enable_log:
-                _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+                        # self.get_logger().info(f"self.points[{self.label}] ")
+                        # self.get_logger().info(f"{self.points[self.label]} ")
+                        points_i = self.points[self.label][:,idi]
+                        points_j = self.points[j][:,idj]
+                        points_ref = self.points_ref[self.label][:,idir]
+                        points_ref_j = self.points_ref[j][:,idjr]
 
-            if L_inv is None:
-                self.get_logger().error("Invalid Ls matrix")
-                # self.u =  np.zeros(6)
-                self.cmd_pub.publish(self.m_vel)
+                        error = points_i - points_j  - (points_ref - points_ref_j)
+                        self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                        L_inv = Inv_Moore_Penrose(self.L)
 
-            # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
-            self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+                        if self.enable_log:
+                            _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+
+                        if L_inv is None:
+                            self.get_logger().error("Invalid Ls matrix")
+                            continue
+
+                        self._u += - self.gain * L_inv @ error.T.reshape(-1)
 
 
-            # if abs(self.u[1].T) > 0.05 :
-            # self.get_logger().info( f"L: : {L_inv}")
-            # self.get_logger().info( f"Control_c y : {self._u.T}")
-            # self.get_logger().info( f"Error: {self.error}")
-            # self.get_logger().info( f"Error: {self.error.T.reshape((-1,1)).T}")
-
-            #   Transformation camera -> robot
 
             #   6DOF
             _w = self.R_cam @ self._u[3:]
@@ -616,13 +677,6 @@ class Controller(Node):
             # self.u[:3] = _v.copy()
             # self.u[3:] = _w.copy()
 
-            # self.get_logger().info( f"Control_d: {self.u}")
-
-            #   Send message
-            # msg = Twist()
-            # _norm = np.linalg.norm(self.u)
-            # if  _norm > .2:
-            #     self.u = .2 * self.u  / _norm
 
             self.m_vel.linear.x = float(self.u[0])
             self.m_vel.linear.y = float(self.u[1])
@@ -631,17 +685,6 @@ class Controller(Node):
             # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
             self.cmd_pub.publish(self.m_vel)
 
-            #   BEGIN
-            # self.m_vel = Twist()
-            # # self.m_vel.linear.x = float(.1)
-            # # self.m_vel.linear.x = float(self.u[0])
-            # # self.m_vel.linear.y = float(-.1)
-            # # self.m_vel.linear.y = float(self.u[1])
-            # self.m_vel.linear.z = float(self.u[2])
-            # # self.m_vel.angular.z = float(self.u[5])
-            # self.cmd_pub.publish(self.m_vel)
-
-            #   END
 
             #   Save data
             self.save_data()
