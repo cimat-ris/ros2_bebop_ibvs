@@ -109,7 +109,7 @@ class Controller(Node):
         self.declare_parameter('takeoff_height', 1.0)
         self.declare_parameter('label', 1)
         self.declare_parameter('n_agents', 1)
-        self.declare_parameter('ref_image', "reference.png")
+        self.declare_parameter('reference_image_prefix', "reference_f")
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
@@ -127,7 +127,7 @@ class Controller(Node):
         self.takeoff_height = self.get_parameter('takeoff_height').value
         self.label = self.get_parameter('label').value
         self.n_agents = self.get_parameter('n_agents').value
-        self.ref_image = self.get_parameter('ref_image').value
+        self.reference_image_prefix = self.get_parameter('reference_image_prefix').value
         self.output = self.get_parameter('output').value
         self.img_depth = self.get_parameter('img_depth').value
         self.gain = self.get_parameter('gain').value
@@ -152,7 +152,7 @@ class Controller(Node):
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
             self.robot_name = 'bebop'
-        self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
+        # self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
 
         #   Detector
         aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
@@ -165,15 +165,15 @@ class Controller(Node):
         self.points_ref = [None]* self.n_agents
         self.corners_ref = [None]* self.n_agents
         for i in range(self.n_agents):
-            image_ref = cv2.imread(self.ref_image)
+            image_ref = cv2.imread(f"{self.reference_image_prefix}_{i}.png")
             if  image_ref is None :
-                self.get_logger.error(f"Image {self.ref_image} could not be read ")
+                self.get_logger().error(f"Image {self.reference_image_prefix}_{i}.png could not be read ")
                 return
             gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
 
             corners_ref, ids_ref, rejected = self.detector.detectMarkers(gray_image)
             if ids_ref is None:
-                self.get_logger.error(f"No detected Markers")
+                self.get_logger().error(f"No detected Markers")
                 return
             self.corners_ref[i] = corners_ref
             _corners_ref = np.array( corners_ref)
@@ -202,7 +202,7 @@ class Controller(Node):
         self.cmd_enable = self.create_publisher(Bool,
                                                 f"/{self.robot_name}_{self.label}/enable",
                                                 qos)
-        self.get_logger().info(f"control: /{self.robot_name}_{self.label}/cmd_vel")
+        # self.get_logger().info(f"control: /{self.robot_name}_{self.label}/cmd_vel")
         #   Image bridge
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
@@ -271,6 +271,7 @@ class Controller(Node):
         self.found_arucos_w = False
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
         self.m_vel = Twist()
+        self.cv_image = None
 
         # INIT control loop
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
@@ -317,11 +318,13 @@ class Controller(Node):
             self.get_logger().warning("ArUcos found in received image")
             self.found_arucos_w = True
 
-        #   Pairing
         self.ids[self.label] = [ i[0] for i in  ids.tolist()]
         self.p = np.array(corners).reshape((-1,2))
         #   Normalize
         self.points[self.label] = self.normalize(self.p.astype(float).T)
+
+        self.view_corners = corners
+        self.view_ids = ids
 
         # if self.enable_polar:
         #     _r = np.linalg.norm(self.points, axis = 0)
@@ -332,15 +335,15 @@ class Controller(Node):
         #     self.points_ref = np.c_[_r, _t].T
 
 
-        #   Publish detection
-        _image = self.cv_image.copy()
-        # print(ids)
-        cv2.aruco.drawDetectedMarkers(_image, corners, ids,
-                                        borderColor = (0,100,0.) )
-        cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label], self._ids_ref[self.label],
-                                        borderColor = (100,1.,0.) )
-
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
+        # #   Publish detection
+        # _image = self.cv_image.copy()
+        # # print(ids)
+        # cv2.aruco.drawDetectedMarkers(_image, corners, ids,
+        #                                 borderColor = (0,100,0.) )
+        # cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label], self._ids_ref[self.label],
+        #                                 borderColor = (100,1.,0.) )
+        #
+        # self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
 
     def save_data(self):
 
@@ -430,10 +433,10 @@ class Controller(Node):
         _query = _query.intersection(set(self.ids_ref[j]))
         _query = list(set(_query))
 
-        self.get_logger().info(f"idx = {_query}")
+        # self.get_logger().info(f"idx = {_query}")
 
         if len(_query) == 0:
-            return [], [], [], []
+            return [], [], [], [], []
 
         match_1 = []
         for q in _query:
@@ -455,7 +458,7 @@ class Controller(Node):
             k =  self.ids_ref[j].index(q)
             match_4 = match_4 + list(range(k*4, k*4 +4))
 
-        return match_1, match_2, match_3, match_4
+        return _query, match_1, match_2, match_3, match_4
 
 
     def control_loop(self):
@@ -482,6 +485,16 @@ class Controller(Node):
                 msg.arucos.append(__msg)
 
             self.features_pub.publish(msg)
+
+        _image = None
+        if not self.cv_image is None:
+            #   Publish detection
+            _image = self.cv_image.copy()
+            # print(ids)
+            cv2.aruco.drawDetectedMarkers(_image, self.view_corners, self.view_ids,
+                                            borderColor = (0,100,0.) )
+
+
 
 
         if self.state == IDLE:
@@ -638,7 +651,7 @@ class Controller(Node):
                     if j != self. label and (not  self.points[j] is None):
 
                         #   mask
-                        idi, idj, idir, idjr = self.get_mathing(j)
+                        ids, idi, idj, idir, idjr = self.get_mathing(j)
 
                         # self.get_logger().info(f"self.points[{self.label}] ")
                         # self.get_logger().info(f"{self.points[self.label]} ")
@@ -647,8 +660,13 @@ class Controller(Node):
                         points_ref = self.points_ref[self.label][:,idir]
                         points_ref_j = self.points_ref[j][:,idjr]
 
-                        error = points_i - points_j  - (points_ref - points_ref_j)
-                        self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                        complement = points_j  + (points_ref - points_ref_j)
+                        # complement = points_ref
+                        # complement[1,:] += 0.5
+                        error = points_i - complement
+                        self.L = interaction_matrix_xyz(complement, self.img_depth)
+                        # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                        # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
                         L_inv = Inv_Moore_Penrose(self.L)
 
                         if self.enable_log:
@@ -660,6 +678,18 @@ class Controller(Node):
 
                         self._u += - self.gain * L_inv @ error.T.reshape(-1)
 
+                        if not _image is None:
+                            complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
+                            complement[1,:] = complement[1,:]*self.f[1] + self.pPrinc[1]
+                            complement = complement.T.reshape((len(ids), 4,2)).astype(float)
+                            complement = tuple(complement[i].reshape((1,4,2)) for i in range(len(ids)))
+                            view_ids = np.array(ids)
+                            cv2.aruco.drawDetectedMarkers(_image,
+                                        complement,
+                                        view_ids,
+                                        borderColor = (100,1.,0.) )
+            # if self.label == 3:
+            #     self.get_logger().info(f"u = {self._u}")
 
 
             #   6DOF
@@ -710,6 +740,9 @@ class Controller(Node):
             self.cmd_enable.publish(Bool(data=self.enable))
             self.get_logger().info("State change: IDLE")
             self.state = IDLE
+
+        if not _image is None:
+            self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
 
 def main(args=None):
     rclpy.init(args=args)

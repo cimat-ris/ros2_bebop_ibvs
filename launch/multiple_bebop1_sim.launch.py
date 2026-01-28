@@ -38,7 +38,7 @@ def generate_launch_description():
     # )
     # bridge.append(ros_gz_bridge)
 
-    for i in range(2):
+    for i in range(4):
 
         ros_gz_bridge = Node(
             package='ros_gz_bridge',
@@ -87,11 +87,8 @@ def generate_launch_description():
         yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'ibfc_sim.yaml')
         with open(yaml_control, 'r') as file:
             config = yaml.safe_load(file)
-        config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_f_'+str(i)+'.png')
+        config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_f')
         config["label"] = i
-        if not os.path.exists(config["ref_image"]):
-            print(f"Camara reference {config["ref_image"]} does not exists")
-            return
 
         if not os.path.exists(config["output"]):
             print(f"Output directory  {config["output"]} does not exists")
