@@ -226,16 +226,19 @@ class Controller(Node):
 
         #   Network
         #   TODO: Flexible connectivity
-        self.features_pub = self.create_publisher(Corners,
-                                             f"/{self.robot_name}_{self.label}/ArUcos",
-                                             qos)
+
 
         #   TODO: Es necesaria la lista?
         self.features_sub  = []
+        self.features_pub  = []
         for i in range(self.n_agents):
             if i != self.label:
+                _pub = self.create_publisher(Corners,
+                                f"/{self.robot_name}_{self.label}_{i}/ArUcos",
+                                qos)
+                self.features_pub.append(_pub)
                 _sub = self.create_subscription(Corners,
-                                f"/{self.robot_name}_{i}/ArUcos",
+                                f"/{self.robot_name}_{i}_{self.label}/ArUcos",
                                 self.feature_receiver,
                                 qos)
                 self.features_sub.append(_sub)
@@ -483,8 +486,8 @@ class Controller(Node):
                 __msg.points[3].x = float(_arucos[i,6])
                 __msg.points[3].y = float(_arucos[i,7])
                 msg.arucos.append(__msg)
-
-            self.features_pub.publish(msg)
+            for i in range(len(self.features_pub)):
+                self.features_pub[i].publish(msg)
 
         _image = None
         if not self.cv_image is None:

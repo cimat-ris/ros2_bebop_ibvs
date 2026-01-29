@@ -49,9 +49,9 @@
 
 
 # # Simulation Clock
-- topic_name: "/clock"
-  ros_type_name: "rosgraph_msgs/msg/Clock"
-  gz_type_name: "gz.msgs.Clock"
-  lazy: true
-  direction: GZ_TO_ROS
+# - topic_name: "/clock"
+#   ros_type_name: "rosgraph_msgs/msg/Clock"
+#   gz_type_name: "gz.msgs.Clock"
+#   lazy: true
+#   direction: GZ_TO_ROS
 
