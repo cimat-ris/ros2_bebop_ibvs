@@ -169,7 +169,8 @@ def plot_time(ax, t_array,
               var_array,
               ref = None,
               color_offset = 0,
-              module = None):
+              module = None,
+              lw = .6):
 
     n = var_array.shape[0]
 
@@ -185,7 +186,7 @@ def plot_time(ax, t_array,
     symbols = []
     for i in range(n):
         ax.plot(t_array,var_array[i,:] ,
-                color=colors[(color_offset+i)%nColors], lw = 0.6 )
+                color=colors[(color_offset+i)%nColors], lw = lw )
         symbols.append(mpatches.Patch(color=colors[(color_offset+i)%nColors]))
 
     if not ref is None:
@@ -273,8 +274,8 @@ def plotError(directory, error, name):
     fig, ax = plt.subplots( figsize=(6,2))
     fig.suptitle("Error")
     time = np.array(error["t"])
-    _error = np.array(error["v"]).copy()
-    plot_time(ax, time,_error )
+    _error = np.array(error["v"].T).copy()
+    plot_time(ax, time,_error, 0.1 )
     # ax.set_ylim([-.5,.5])
     name = os.path.join(directory ,name)
     plt.savefig(name ,bbox_inches='tight')
@@ -573,6 +574,7 @@ def read_data(directory,label, n):
                             # error[k][i]["t"] = [t - t0 for t in error[k][i]["t"]]
     #   Sum error
     all_idx = list(all_idx)
+    all_idx.sort()
     error[label] = {}
 
     #   Join time
@@ -597,7 +599,8 @@ def read_data(directory,label, n):
                     v_id = all_idx.index(idx)
                     _v[v_id*8 : v_id*8+8] += _dict[idx]['v'][t_id]
         new_error[i,:] = _v # Tal vez copy
-    error = {'t': t, 'v': new_error.T}
+    t0 = t[0]
+    error = {'t': [_t-t0 for _t in t], 'v': new_error}
 
     name = os.path.join(directory ,f"log_{label}.dat")
     log = [None]*n
@@ -633,6 +636,38 @@ def get_pd(name):
     pd = np.array(_dict['pd'])
     return pd.reshape((-1,4))
 
+def join_error(error):
+
+    if any([(i is None) for i in error]):
+        return None
+
+    #   Join time
+    t = error[0]['t']
+    new_error = error[0]['v'].copy()
+    idx = [0 for i in range(len(error))]
+    for i in range(len(t)):
+        for j in range(1,len(error)):
+            # print( error[j])
+            # print( error[j]['t'])
+            # print( j)
+            # print( idx[j])
+            # print( error[j]['t'][idx[j]])
+            while idx[j] < len(error[j]['t']) and error[j]['t'][idx[j]] < t[i] :
+                idx[j] += 1
+
+            if idx[j] == 0:
+                new_error[i,:] +=  error[j]['v'][0]
+            if idx[j] >= len(error[j]['t']):
+                new_error[i,:] +=  error[j]['v'][-1]
+            else:
+                delta = t[i] - error[j]['t'][idx[j]-1]
+                delta /= error[j]['t'][idx[j]] - error[j]['t'][idx[j]-1]
+                new_error[i,:] +=  error[j]['v'][idx[j]-1]
+                new_error[i,:] +=  delta * (error[j]['v'][idx[j]] - error[j]['v'][idx[j]-1] )
+
+
+    return {'t': t, 'v': new_error}
+
 def main(arg):
 
     # pd = np.array([arg.pose[0], arg.pose[1], arg.pose[2],
@@ -641,34 +676,42 @@ def main(arg):
     directory = arg.directory
     pd = get_pd(arg.desired)
 
+    error = [None]*arg.n
+
     for i in range(arg.n):
-        position, velocities, n_e, arucos, error, log = read_data(directory,i, arg.n)
+        position, velocities, n_e, arucos, error[i], log = read_data(directory,i, arg.n)
 
         s_ref = get_reference(arg.reference,
                             markers = markers,
                             out_directory = directory ,
                             label = i)
-        print(s_ref)
-        if not n_e is None:
-            print("Ploting  ")
-            plotNErr(directory, n_e, f"Error_{i}.pdf")
-        if not velocities is None:
-            print("Ploting VELOCITIES ")
-            plotVel(directory, velocities, f"Velocities_{i}.pdf")
-        if not arucos is None:
-            print("Ploting ArUcos")
-            plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
-        if not error is None:
-            print("Ploting Error")
-            plotError(directory, error, f"Error_runtime_{i}.pdf")
-        if not position is None:
-            print("Ploting 3D")
-            plotPosition(directory, position, f"State_{i}.pdf")
+        # print(s_ref)
+        # if not n_e is None:
+        #     print("Ploting  ")
+        #     plotNErr(directory, n_e, f"Error_{i}.pdf")
+        # if not velocities is None:
+        #     print("Ploting VELOCITIES ")
+        #     plotVel(directory, velocities, f"Velocities_{i}.pdf")
+        # if not arucos is None:
+        #     print("Ploting ArUcos")
+        #     plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
+        # if not error[i] is None:
+        #     print("Ploting Error")
+        #     plotError(directory, error[i], f"Error_runtime_{i}.pdf")
+        # if not position is None:
+        #     print("Ploting 3D")
+        #     plotPosition(directory, position, f"State_{i}.pdf")
+        #
+        # for j in range(arg.n):
+        #     if not log[j] is None:
+        #         print("Ploting LOG")
+        #         plotLog(directory, log[j], f"LOG_SVD_D_{i}_{j}.pdf")
 
-        for j in range(arg.n):
-            if not log[j] is None:
-                print("Ploting LOG")
-                plotLog(directory, log[j], f"LOG_SVD_D_{i}_{j}.pdf")
+    jerror = join_error(error)
+    if not jerror is None:
+        print("Ploting Joined Error")
+        plotError(directory, jerror, f"Error_joined.pdf")
+
 
 
 if __name__ ==  "__main__":
