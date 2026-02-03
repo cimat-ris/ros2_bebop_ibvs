@@ -1,10 +1,8 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, ExecuteProcess, DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
+from launch_ros.actions import Node, ROSTimer
 from string import Template
-# from ros_gz_bridge.actions import RosGzBridge
 import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -100,4 +98,8 @@ def generate_launch_description():
             )
         controller.append(_controller)
 
-    return LaunchDescription([gz_sim] + models + bridge + controller)
+    run = [gz_sim]
+    run+= [ROSTimer(period = 1.,
+                 actions = models + bridge + controller)]
+
+    return LaunchDescription(run)

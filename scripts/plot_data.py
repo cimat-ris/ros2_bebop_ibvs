@@ -630,7 +630,7 @@ def main(arg):
 
 
 if __name__ ==  "__main__":
-    description = "Plotting experiment data"
+    description = "Plotting single camera experiment data"
     parser = argparse.ArgumentParser(prog = 'python3 miguel_iros.py',
                                      description = description)
     parser.add_argument( 'directory', type=str, default = 'output',
