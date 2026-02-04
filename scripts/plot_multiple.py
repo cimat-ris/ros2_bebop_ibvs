@@ -20,7 +20,7 @@ import argparse
 import yaml
 
 #   Custom
-import camera as cm
+from camera import Camera
 
 
 markers_list = ["4X4_50" ,
@@ -110,58 +110,6 @@ def plot_descriptors_simple(ax,
                 'o',color=colors[i%nColors], mec = 'k')
 
     return
-
-def plot_3Dcam(ax, 
-               positionArray,
-               init_configuration,
-               end_configuration,
-               desired_configuration,
-               color, lw = 1,
-               camera_scale    = 0.02,
-               paper_1 = False):
-
-    #   Trayectories
-    ax.plot(positionArray[0,:],
-    #ax.scatter(positionArray[0,:],
-            positionArray[1,:],
-            positionArray[2,:],
-            c = color.reshape((1,3)),
-            linewidth = 0.5)
-            #s = 0.1 ) # Plot camera trajectory
-    
-    ##   Z axis refs
-    #ax.plot([init_configuration[0],init_configuration[0]],
-            #[init_configuration[1],init_configuration[1]],
-            #[0,init_configuration[2]],
-            #color = 'k', linestyle=(0, (5, 10)),lw = 0.5)
-    #ax.plot([end_configuration[0],end_configuration[0]],
-            #[end_configuration[1],end_configuration[1]],
-            #[0,end_configuration[2]],
-            #color = 'k', linestyle=(0, (5, 10)),lw = 0.5)
-    #ax.plot([desired_configuration[0],desired_configuration[0]],
-            #[desired_configuration[1],desired_configuration[1]],
-            #[0,desired_configuration[2]],
-            #color = 'k', linestyle=(0, (5, 10)), lw = 0.5)
-    
-    #   Cameras
-    camera = cm.camera()
-    camera.pose(end_configuration)
-    camera.draw_camera(ax, scale=camera_scale, color='r', lw = lw)
-    ax.text(camera.p[0],camera.p[1],camera.p[2],"f")
-    camera.pose(desired_configuration)
-    camera.draw_camera(ax, scale=camera_scale, color='g', 
-                     lw = 0.5*lw)
-    ax.text(camera.p[0],camera.p[1],camera.p[2],"*")
-    camera.pose(init_configuration)
-    camera.draw_camera(ax, scale=camera_scale, color='b', lw = lw)
-    ax.text(camera.p[0],camera.p[1],camera.p[2],"0")
-    
-    
-    
-    ax.set_xlabel("$X$")
-    ax.set_ylabel("$Y$")
-    ax.set_zlabel("$Z$")
-    ax.grid(True)
 
 #   My plots
 
@@ -328,7 +276,8 @@ def plotArucos(directory, arucos, reference, name):
     plt.close()
 
 
-def plot3D(directory, state, pd):
+def plot3D(directory, allStates, pd, name):
+    n_agents = len(allStates)
 
     source_dir = os.path.dirname(__file__)
     npzfile = np.load(source_dir +"/general.npz")
@@ -336,38 +285,42 @@ def plot3D(directory, state, pd):
     nColors = colors.shape[0]
 
 
-    fig, ax = plt.subplots(ncols = 1,
+    fig, ax = plt.subplots(ncols = 2,
                            frameon=False,
-                           figsize=(8,6))
-    ax.axis('off')
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
+                           figsize=(8,6),
+                           #figsize=(12,9),
+                            gridspec_kw={'width_ratios': [3,1]})
+    #fig = plt.figure(frameon=False, figsize=(5,3))
+    ax[0].axis('off')
+    ax[0] = fig.add_subplot(1, 2, 1, projection='3d')
+    name = directory+"/3Dplot"
 
+    x_min = allStates[0][0,0]
+    x_max = allStates[0][0,0]
+    y_min = allStates[0][1,0]
+    y_max = allStates[0][1,0]
+    z_min = allStates[0][2,0]
+    z_max = allStates[0][2,0]
 
-    x_min = state[1,0]
-    x_max = state[1,0]
-    y_min = state[2,0]
-    y_max = state[2,0]
-    z_min = state[3,0]
-    z_max = state[3,0]
+    camera = Camera()
+    for i in range(n_agents):
+        pos_array = allStates[i]
+        init = pos_array[:,0]
+        end = pos_array[:,-1]
+        x_min = min(x_min, init[0], end[0])
+        x_max = max(x_max, init[0], end[0])
+        y_min = min(y_min, init[1], end[1])
+        y_max = max(y_max, init[1], end[1])
+        z_min = min(z_min, init[2], end[2])
+        z_max = max(z_max, init[2], end[2])
 
-    pos_array = np.zeros((6,state.shape[1]))
-    pos_array[[0,1,2,5],:] = state[1:5,:]
-    pos_array[4,:] = pi/2.
+        camera.plot_3Dcam(ax[0],
+                    pos_array,
+                    pd[:,i],
+                    color = colors[i+1],
+                    label = str(i),
+                    camera_scale = 0.05)
 
-    x_min = min(x_min, pd[0])
-    x_max = max(x_max, pd[0])
-    y_min = min(y_min, pd[1])
-    y_max = max(y_max, pd[1])
-    z_min = min(z_min, pd[2])
-    z_max = max(z_max, pd[2])
-
-    plot_3Dcam(ax,
-                pos_array,
-                pos_array[:,0],
-                pos_array[:,-1],
-                pd,
-                color = colors[0],
-                camera_scale    = 0.05)
 
 
     width = x_max - x_min
@@ -381,12 +334,21 @@ def plot3D(directory, state, pd):
     y_max += (sqrfact - height )/2
     z_min -= (sqrfact - depth )/2
     z_max += (sqrfact - depth )/2
-    ax.set_xlim(x_min,x_max)
-    ax.set_ylim(y_min,y_max)
-    ax.set_zlim(z_min,z_max)
+    ax[0].set_xlim(x_min,x_max)
+    ax[0].set_ylim(y_min,y_max)
+    ax[0].set_zlim(z_min,z_max)
 
-    name = os.path.join(directory ,f"3Dplot.pdf")
-    plt.savefig(name)#,bbox_inches='tight')
+    #ax = fig.add_subplot(1, 2, 2)
+    symbols = []
+    labels = ["Agent "+ str(i) for i in range(n_agents)]
+    for i in range(n_agents):
+        symbols.append(mpatches.Patch(color=colors[(i+1)%colors.shape[0]]))
+    ax[1].legend(symbols,labels, loc=7)
+    ax[1].axis('off')
+
+    #fig.legend( loc=1)
+    plt.savefig(name)
+    # plt.show()
     plt.close()
 
 
@@ -634,7 +596,14 @@ def get_pd(name):
         _dict = yaml.safe_load(file)
 
     pd = np.array(_dict['pd'])
-    return pd.reshape((-1,4))
+    pd = pd.reshape((-1,4))
+    n = pd.shape[0]
+
+    pd = (pd[:,:3],  np.zeros((n,2)), pd[:,3].reshape((-1,1)))
+    pd = np.concatenate(pd, axis = 1)
+    pd[:,3] = -pi/2.
+    pd[:,5] -= pi
+    return pd.T
 
 def join_error(error):
 
@@ -668,18 +637,29 @@ def join_error(error):
 
     return {'t': t, 'v': new_error}
 
+def fit_position(position):
+
+    n = len(position)
+    for i in range(n):
+        steps = position[i].shape[1]
+        _p = (position[i][1:4,:],  np.zeros((2,steps)), position[i][4,:].reshape((1,-1)))
+        _p = np.concatenate(_p)
+        _p[3,:] = -pi/2.
+        _p[5,:] -= pi
+        position[i] = _p
+    return position
+
 def main(arg):
 
-    # pd = np.array([arg.pose[0], arg.pose[1], arg.pose[2],
-    #                0, pi/2., pi*arg.pose[3]/180.])
     markers = markers_list.index(arg.markers)
     directory = arg.directory
     pd = get_pd(arg.desired)
 
     error = [None]*arg.n
+    position = [None]*arg.n
 
     for i in range(arg.n):
-        position, velocities, n_e, arucos, error[i], log = read_data(directory,i, arg.n)
+        position[i], velocities, n_e, arucos, error[i], log = read_data(directory,i, arg.n)
 
         s_ref = get_reference(arg.reference,
                             markers = markers,
@@ -698,9 +678,9 @@ def main(arg):
         # if not error[i] is None:
         #     print("Ploting Error")
         #     plotError(directory, error[i], f"Error_runtime_{i}.pdf")
-        # if not position is None:
+        # if not position[i] is None:
         #     print("Ploting 3D")
-        #     plotPosition(directory, position, f"State_{i}.pdf")
+        #     plotPosition(directory, position[i], f"State_{i}.pdf")
         #
         # for j in range(arg.n):
         #     if not log[j] is None:
@@ -711,6 +691,13 @@ def main(arg):
     if not jerror is None:
         print("Ploting Joined Error")
         plotError(directory, jerror, f"Error_joined.pdf")
+
+    position= fit_position(position)
+    if not any([( i is None) for i in position]):
+        print("Ploting 3D plot")
+        plot3D(directory, position, pd, f"3DPlot.pdf")
+
+
 
 
 
