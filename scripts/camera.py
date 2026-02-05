@@ -23,6 +23,9 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
+#   Custom
+from my_math import rotation_matrix_euler
+
 
 #   Logger
 import logging
@@ -58,31 +61,31 @@ class Arrow3D(FancyArrowPatch):
 
         return np.min(zs)
 
-def rotation_matrix(ang,ax):
-
-    ca = np.cos(ang)
-    sa = np.sin(ang)
-    if ax == 'x':
-        return np.array([[1.0, 0.0, 0.0],
-                        [0.0,  ca, -sa],
-                        [0.0,  sa,  ca]])
-    elif ax == 'y':
-        return np.array([[ ca, 0.0,  sa],
-                        [0.0, 1.0, 0.0],
-                        [-sa, 0.0,  ca]])
-    elif ax == 'z':
-        return np.array([[ ca, -sa, 0.0],
-                        [ sa,  ca, 0.0],
-                        [0.0, 0.0, 1.0]])
-
-    return None
-
-def rotation_matrix_euler(angs):
-    _angs = angs.reshape(-1)
-    _R = rotation_matrix(_angs[2], 'z')
-    _R = _R @ rotation_matrix(_angs[1], 'y')
-    _R = _R @ rotation_matrix(_angs[0], 'x')
-    return _R
+# def rotation_matrix(ang,ax):
+#
+#     ca = np.cos(ang)
+#     sa = np.sin(ang)
+#     if ax == 'x':
+#         return np.array([[1.0, 0.0, 0.0],
+#                         [0.0,  ca, -sa],
+#                         [0.0,  sa,  ca]])
+#     elif ax == 'y':
+#         return np.array([[ ca, 0.0,  sa],
+#                         [0.0, 1.0, 0.0],
+#                         [-sa, 0.0,  ca]])
+#     elif ax == 'z':
+#         return np.array([[ ca, -sa, 0.0],
+#                         [ sa,  ca, 0.0],
+#                         [0.0, 0.0, 1.0]])
+#
+#     return None
+#
+# def rotation_matrix_euler(angs):
+#     _angs = angs.reshape(-1)
+#     _R = rotation_matrix(_angs[2], 'z')
+#     _R = _R @ rotation_matrix(_angs[1], 'y')
+#     _R = _R @ rotation_matrix(_angs[0], 'x')
+#     return _R
 
 
 class Camera:

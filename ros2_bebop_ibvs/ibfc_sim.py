@@ -183,7 +183,8 @@ class Controller(Node):
             self.ids_ref[i]  = [ j[0] for j in  ids_ref.tolist()]
             cv2.aruco.drawDetectedMarkers(image_ref, corners_ref, ids_ref,
                                          borderColor = (100,1.,0.) )
-            cv2.imwrite(f"reference_proc_{self.label}_{i}.png", image_ref)
+            _name = os.path.join(self.output, f"reference_proc_{self.label}_{i}.png")
+            cv2.imwrite(_name, image_ref)
         self.ids = [None]*self.n_agents
         self.points = [None]*self.n_agents
         self.p = None
@@ -225,10 +226,7 @@ class Controller(Node):
                                                   qos)
 
         #   Network
-        #   TODO: Flexible connectivity
-
-
-        #   TODO: Es necesaria la lista?
+        #   TODO: graph
         self.features_sub  = []
         self.features_pub  = []
         for i in range(self.n_agents):
@@ -256,12 +254,23 @@ class Controller(Node):
         self.arucos_d = os.path.join(self.output, f"arUcos_{self.label}.dat")
         with open(self.arucos_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.error_d = os.path.join(self.output, f"error_{self.label}.dat")
-        with open(self.error_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.log_d = os.path.join(self.output, f"log_{self.label}.dat")
-        with open(self.log_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
+        self.error_d = [None]*self.n_agents
+        self.log_d = [None]*self.n_agents
+        for j in range(self.n_agents):
+            if j != self.label:
+                self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
+                with open(self.error_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+                self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
+                with open(self.log_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
+        # output_filename = os.path.join(self.output, f"video_{self.label}.mp4")
+        # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use appropriate codec
+        # fps = int(self.frequency)
+        # self.frame_shape = (480, 856)
+        # self.video_writer = cv2.VideoWriter(output_filename, fourcc, fps, self.frame_shape)
+
 
         #   State
         self.state = IDLE
@@ -275,11 +284,15 @@ class Controller(Node):
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
         self.m_vel = Twist()
         self.cv_image = None
+        self.error = [None]*self.n_agents
+        self.svd = [None]*self.n_agents
 
         # INIT control loop
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
-
+    # def __exit__(self):
+    # def __del__(self):
+    #     self.video_writer.release()
 
     def state_changed(self, msg):
         self.new_state = msg.data
@@ -369,38 +382,50 @@ class Controller(Node):
             f.write(binary)
 
 
-        # with open(self.norm_e_d, 'ab') as f:
-        #     data = (t,np.linalg.norm(self.error))
-        #     binary = struct.pack('dd', *data)
-        #     f.write(binary)
-        #
-        # with open(self.arucos_d, 'ab') as f:
-        #     for i in range(len(self.ids)):
-        #
-        #         data = (t, self.ids[i])
-        #         data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
-        #         binary = struct.pack('didddddddd', *data)
-        #         f.write(binary)
-        #
-        # with open(self.error_d, 'ab') as f:
-        #     for i in range(len(self.ids)):
-        #
-        #         data = (t, self.ids[i])
-        #         data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
-        #         binary = struct.pack('didddddddd', *data)
-        #         f.write(binary)
+        with open(self.norm_e_d, 'ab') as f:
+            _norm = 0.
+            for j in range(self.n_agents):
+                if j != self.label:
+                    _v = self.error[j].reshape(-1)
+                    _norm += np.dot(_v,_v)
+            data = (t,np.sqrt(_norm))
+            binary = struct.pack('dd', *data)
+            f.write(binary)
+
+        with open(self.arucos_d, 'ab') as f:
+            for i in range(len(self.ids[self.label])):
+
+                data = (t, self.ids[self.label][i])
+                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+        for j in range(self.n_agents):
+            if j != self.label:
+                with open(self.error_d[j], 'ab') as f:
+                    for i in range(len(self.ids[j])):
+
+                        data = (t, self.ids[j][i])
+                        data += tuple(self.error[j][:,4*i:4*(i+1)].T.reshape(-1))
+                        diff = 10 - len(data)
+                        if diff !=0:
+                            data += tuple(np.zeros(diff))
+                        binary = struct.pack('didddddddd', *data)
+                        f.write(binary)
 
         # save log
         if not self.enable_log:
             return
-        with open(self.log_d, 'ab') as f:
-            data = (t,)
-            # data += tuple(self.L.reshape(-1))
-            data += tuple(self.svd.reshape(-1))
-            # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
-            binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
-            # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
-            f.write(binary)
+        for j in range(self.n_agents):
+            if j != self.label:
+                with open(self.log_d[j], 'ab') as f:
+                    data = (t,)
+                    # data += tuple(self.L.reshape(-1))
+                    data += tuple(self.svd[j].reshape(-1))
+                    # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
+                    binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
+                    # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
+                    f.write(binary)
 
     def feature_receiver(self, msg):
 
@@ -496,6 +521,9 @@ class Controller(Node):
             # print(ids)
             cv2.aruco.drawDetectedMarkers(_image, self.view_corners, self.view_ids,
                                             borderColor = (0,100,0.) )
+            cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label],
+                                          self._ids_ref[self.label],
+                                            borderColor = (0,0., 100.) )
 
 
 
@@ -585,6 +613,7 @@ class Controller(Node):
                 self.state = IBFC
             elif self.new_state == IBFC and  not self.init_complete:
                 self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to IBFC")
+                self.new_state = INITCOND
             elif self.new_state == LANDING:
                 self.get_logger().info("State change: LANDING")
                 self.state = LANDING
@@ -666,20 +695,20 @@ class Controller(Node):
                         complement = points_j  + (points_ref - points_ref_j)
                         # complement = points_ref
                         # complement[1,:] += 0.5
-                        error = points_i - complement
+                        self.error[j] = points_i - complement
                         self.L = interaction_matrix_xyz(complement, self.img_depth)
                         # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
                         # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
                         L_inv = Inv_Moore_Penrose(self.L)
 
                         if self.enable_log:
-                            _, self.svd, _ = np.linalg.svd(self.L.T @ self.L)
+                            _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
 
                         if L_inv is None:
                             self.get_logger().error("Invalid Ls matrix")
                             continue
 
-                        self._u += - self.gain * L_inv @ error.T.reshape(-1)
+                        self._u += - self.gain * L_inv @ self.error[j].T.reshape(-1)
 
                         if not _image is None:
                             complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
@@ -690,7 +719,7 @@ class Controller(Node):
                             cv2.aruco.drawDetectedMarkers(_image,
                                         complement,
                                         view_ids,
-                                        borderColor = (100,1.,0.) )
+                                        borderColor = (50,1.,0.) )
             # if self.label == 3:
             #     self.get_logger().info(f"u = {self._u}")
 
@@ -722,6 +751,9 @@ class Controller(Node):
             #   Save data
             self.save_data()
             self.data2save = True
+            # frame = np.full(self.frame_shape+(3,), fill_value=255, dtype=np.uint8)
+            # self.video_writer.write(frame)
+            # self.video_writer.write(_image)
 
             #   Change state
             if self.new_state == LANDING:
@@ -746,6 +778,8 @@ class Controller(Node):
 
         if not _image is None:
             self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
+            # self.video_writer.write(_image)
+
 
 def main(args=None):
     rclpy.init(args=args)

@@ -23,6 +23,7 @@ import yaml
 
 #   Custom
 from camera import Camera
+from my_math import rotation_matrix_euler, get_angles
 
 
 markers_list = ["4X4_50" ,
@@ -134,59 +135,59 @@ def rotation_matrix(ang,ax):
 
     return None
 
-def rotation_matrix_euler(angs):
-    _angs = angs.reshape(-1)
-    _R = rotation_matrix(_angs[2], 'z')
-    _R = _R @ rotation_matrix(_angs[1], 'y')
-    _R = _R @ rotation_matrix(_angs[0], 'x')
-    return _R
-
-def get_angles(R, prev_angs= None):
-    #print(R)
-    if (R[2,0] < 1.0):
-        if R[2,0] > -1.0:
-            pitch = np.arcsin(-R[2,0])
-            if not( prev_angs is None):
-                pitch_alt = np.sign(pitch) *(pi - abs(pitch))
-                delta_pitch = abs(pitch-prev_angs[1])
-                if delta_pitch > pi:
-                    delta_pitch = 2*pi-delta_pitch
-                delta_pitch2 = abs(pitch_alt-prev_angs[1])
-                if delta_pitch2 > pi:
-                    delta_pitch2 = 2*pi-delta_pitch2
-                if delta_pitch2 < delta_pitch:
-                    pitch = pitch_alt
-            cp = np.cos(pitch)
-            yaw = arctan2(R[1,0]/cp,R[0,0]/cp)
-            roll = arctan2(R[2,1]/cp,R[2,2]/cp)
-        else:
-            pitch = np.pi/2.
-            if prev_angs is None:
-                yaw = -arctan2(-R[1,2],R[1,1])
-                roll = 0.
-            else:
-                tmp = arctan2(-R[1,2],R[1,1])
-                roll = prev_angs[0]
-                yaw = roll - tmp
-                if yaw > pi:
-                    yaw -= 2*pi
-                if yaw < -pi:
-                    yaw += 2*pi
-
-    else:
-        pitch = -np.pi/2.
-        if prev_angs is None:
-            yaw = arctan2(-R[1,2],R[1,1])
-            roll = 0.
-        else:
-            tmp = arctan2(-R[1,2],R[1,1])
-            roll = prev_angs[0]
-            yaw = tmp - roll
-            if yaw > pi:
-                yaw -= 2*pi
-            if yaw < -pi:
-                yaw += 2*pi
-    return np.array( [roll, pitch, yaw])
+# def rotation_matrix_euler(angs):
+#     _angs = angs.reshape(-1)
+#     _R = rotation_matrix(_angs[2], 'z')
+#     _R = _R @ rotation_matrix(_angs[1], 'y')
+#     _R = _R @ rotation_matrix(_angs[0], 'x')
+#     return _R
+#
+# def get_angles(R, prev_angs= None):
+#     #print(R)
+#     if (R[2,0] < 1.0):
+#         if R[2,0] > -1.0:
+#             pitch = np.arcsin(-R[2,0])
+#             if not( prev_angs is None):
+#                 pitch_alt = np.sign(pitch) *(pi - abs(pitch))
+#                 delta_pitch = abs(pitch-prev_angs[1])
+#                 if delta_pitch > pi:
+#                     delta_pitch = 2*pi-delta_pitch
+#                 delta_pitch2 = abs(pitch_alt-prev_angs[1])
+#                 if delta_pitch2 > pi:
+#                     delta_pitch2 = 2*pi-delta_pitch2
+#                 if delta_pitch2 < delta_pitch:
+#                     pitch = pitch_alt
+#             cp = np.cos(pitch)
+#             yaw = arctan2(R[1,0]/cp,R[0,0]/cp)
+#             roll = arctan2(R[2,1]/cp,R[2,2]/cp)
+#         else:
+#             pitch = np.pi/2.
+#             if prev_angs is None:
+#                 yaw = -arctan2(-R[1,2],R[1,1])
+#                 roll = 0.
+#             else:
+#                 tmp = arctan2(-R[1,2],R[1,1])
+#                 roll = prev_angs[0]
+#                 yaw = roll - tmp
+#                 if yaw > pi:
+#                     yaw -= 2*pi
+#                 if yaw < -pi:
+#                     yaw += 2*pi
+#
+#     else:
+#         pitch = -np.pi/2.
+#         if prev_angs is None:
+#             yaw = arctan2(-R[1,2],R[1,1])
+#             roll = 0.
+#         else:
+#             tmp = arctan2(-R[1,2],R[1,1])
+#             roll = prev_angs[0]
+#             yaw = tmp - roll
+#             if yaw > pi:
+#                 yaw -= 2*pi
+#             if yaw < -pi:
+#                 yaw += 2*pi
+#     return np.array( [roll, pitch, yaw])
 
 def error_state_6(reference,
                 agents,
@@ -234,10 +235,13 @@ def error_state_6(reference,
     #   Rotation error
     rot_err = np.zeros(n)
     for i in range(n):
+        # print("R>")
         _R = R.T @ agents[i].R
         state_r[:,i] = get_angles(_R)
-        _R = rotation_matrix_euler(reference[:,i]).T @ _R
+        _R = rotation_matrix_euler(reference[3:,i]).T @ _R
         #agents[i].pose(new_state[:,i])
+
+        # print("<R")
 
         #   Get error
         #_R =  cm.rot(new_reference[3,i],'x') @ agents[i].R.T
@@ -274,7 +278,7 @@ def error_state_6(reference,
     ax.set_zlabel('$z$')
 
     plt.savefig(name,bbox_inches='tight')
-    #plt.show()
+    # plt.show()
     plt.close()
 
     return np.array([t_err, rot_err])
@@ -828,7 +832,7 @@ def join_error(error):
 
             if idx[j] == 0:
                 new_error[i,:] +=  error[j]['v'][0]
-            if idx[j] >= len(error[j]['t']):
+            elif idx[j] >= len(error[j]['t']):
                 new_error[i,:] +=  error[j]['v'][-1]
             else:
                 delta = t[i] - error[j]['t'][idx[j]-1]
@@ -858,7 +862,7 @@ def get_formation_error(position, pd, name):
 
             if idx[j] == 0:
                 _position =  position[j][1:,0]
-            if idx[j] >= position[j].shape[1]:
+            elif idx[j] >= position[j].shape[1]:
                 _position =  position[j][1:,-1]
             else:
                 delta = t[i] - position[j][0,idx[j]-1]
@@ -871,7 +875,7 @@ def get_formation_error(position, pd, name):
         error[i,:] =  error_state_6(pd,  agents)
 
     #   plot last
-    error[i,:] =  error_state_6(pd,  agents, name = name)
+    error_state_6(pd,  agents, name = name)
 
     return {'t': t, 'v': error}
 

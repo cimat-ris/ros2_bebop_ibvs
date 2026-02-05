@@ -19,8 +19,7 @@ import os
 import argparse
 
 #   Custom
-import camera as cm
-
+from camera import Camera
 
 markers_list = ["4X4_50" ,
         "4X4_100" ,
@@ -142,7 +141,7 @@ def plot_3Dcam(ax,
             #color = 'k', linestyle=(0, (5, 10)), lw = 0.5)
     
     #   Cameras
-    camera = cm.camera()
+    camera = Camera()
     camera.pose(end_configuration)
     camera.draw_camera(ax, scale=camera_scale, color='r', lw = lw)
     ax.text(camera.p[0],camera.p[1],camera.p[2],"f")
