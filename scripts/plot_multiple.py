@@ -1,7 +1,9 @@
 
 #   libs
 import numpy as np
-from numpy import pi
+from numpy import pi, arctan2
+from numpy.linalg import norm, svd
+from scipy.optimize import minimize_scalar
 import cv2
 
 #   Plot
@@ -111,7 +113,201 @@ def plot_descriptors_simple(ax,
 
     return
 
+#   TODO: my math py
+
+def rotation_matrix(ang,ax):
+
+    ca = np.cos(ang)
+    sa = np.sin(ang)
+    if ax == 'x':
+        return np.array([[1.0, 0.0, 0.0],
+                        [0.0,  ca, -sa],
+                        [0.0,  sa,  ca]])
+    elif ax == 'y':
+        return np.array([[ ca, 0.0,  sa],
+                        [0.0, 1.0, 0.0],
+                        [-sa, 0.0,  ca]])
+    elif ax == 'z':
+        return np.array([[ ca, -sa, 0.0],
+                        [ sa,  ca, 0.0],
+                        [0.0, 0.0, 1.0]])
+
+    return None
+
+def rotation_matrix_euler(angs):
+    _angs = angs.reshape(-1)
+    _R = rotation_matrix(_angs[2], 'z')
+    _R = _R @ rotation_matrix(_angs[1], 'y')
+    _R = _R @ rotation_matrix(_angs[0], 'x')
+    return _R
+
+def get_angles(R, prev_angs= None):
+    #print(R)
+    if (R[2,0] < 1.0):
+        if R[2,0] > -1.0:
+            pitch = np.arcsin(-R[2,0])
+            if not( prev_angs is None):
+                pitch_alt = np.sign(pitch) *(pi - abs(pitch))
+                delta_pitch = abs(pitch-prev_angs[1])
+                if delta_pitch > pi:
+                    delta_pitch = 2*pi-delta_pitch
+                delta_pitch2 = abs(pitch_alt-prev_angs[1])
+                if delta_pitch2 > pi:
+                    delta_pitch2 = 2*pi-delta_pitch2
+                if delta_pitch2 < delta_pitch:
+                    pitch = pitch_alt
+            cp = np.cos(pitch)
+            yaw = arctan2(R[1,0]/cp,R[0,0]/cp)
+            roll = arctan2(R[2,1]/cp,R[2,2]/cp)
+        else:
+            pitch = np.pi/2.
+            if prev_angs is None:
+                yaw = -arctan2(-R[1,2],R[1,1])
+                roll = 0.
+            else:
+                tmp = arctan2(-R[1,2],R[1,1])
+                roll = prev_angs[0]
+                yaw = roll - tmp
+                if yaw > pi:
+                    yaw -= 2*pi
+                if yaw < -pi:
+                    yaw += 2*pi
+
+    else:
+        pitch = -np.pi/2.
+        if prev_angs is None:
+            yaw = arctan2(-R[1,2],R[1,1])
+            roll = 0.
+        else:
+            tmp = arctan2(-R[1,2],R[1,1])
+            roll = prev_angs[0]
+            yaw = tmp - roll
+            if yaw > pi:
+                yaw -= 2*pi
+            if yaw < -pi:
+                yaw += 2*pi
+    return np.array( [roll, pitch, yaw])
+
+def error_state_6(reference,
+                agents,
+                name= None,
+                fontsize = 10.):
+
+    n = len(agents)
+
+    state_t = np.zeros((3,n))
+    state_r = np.zeros((3,n))
+    for i in range(len(agents)):
+        state_t[:,i] = agents[i].p[:3]
+        state_r[:,i] = agents[i].p[3:]
+
+    #   Regularization to centroid
+    state_c = state_t - state_t.mean(axis = 1).reshape((-1,1))
+    ref_c = reference[:3,:] - reference[:3,:].mean(axis = 1).reshape((-1,1))
+    ref_c /= norm(ref_c,axis = 0).mean()
+
+    M = state_c.T.reshape((n,1,3))
+    D = ref_c.T.reshape((n,3,1))
+    H = D @ M
+    H = H.sum(axis = 0)
+
+    U, S, VH = svd(H)
+    R = VH.T @ U.T
+
+    #   Caso de Reflexión
+    if np.linalg.det(R) < 0.:
+        VH[2,:] = -VH[2,:]
+        R = VH.T @ U.T
+
+    #   Aligning
+    state_c = R.T @ state_c
+
+    #   translation error
+    f = lambda r : (norm(ref_c - r*state_c,axis = 0)**2).sum()/n
+    r_state = minimize_scalar(f, method='brent')
+    t_err = f(r_state.x)
+    t_err = np.sqrt(t_err)
+
+    #   Scaling
+    state_c = r_state.x * state_c
+
+    #   Rotation error
+    rot_err = np.zeros(n)
+    for i in range(n):
+        _R = R.T @ agents[i].R
+        state_r[:,i] = get_angles(_R)
+        _R = rotation_matrix_euler(reference[:,i]).T @ _R
+        #agents[i].pose(new_state[:,i])
+
+        #   Get error
+        #_R =  cm.rot(new_reference[3,i],'x') @ agents[i].R.T
+        #_R = cm.rot(new_reference[4,i],'y') @ _R
+        #_R = cm.rot(new_reference[5,i],'z') @ _R
+        #_R = rotation_matrix_euler(reference[:,i]).T
+        #_R = rotation_matrix_euler(state_r[:,i]).T @ _R
+
+        _arg = (_R.trace()-1.)/2.
+        if abs(_arg) < 1.:
+            rot_err[i] = np.arccos(_arg)
+        else:
+            rot_err[i] = np.arccos(np.sign(_arg))
+
+    #   rms
+    rot_err = rot_err**2
+    rot_err = rot_err.sum()/n
+    rot_err = np.sqrt(rot_err)
+
+    if name is None:
+        return np.array([t_err, rot_err])
+
+     ##   Plot
+    matplotlib.rcParams["mathtext.fontset"] = 'cm'
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.view_init(elev=30, azim=165)
+    plot_aligned(ax, np.stack( (state_c, state_r)).reshape((6,-1)) ,
+                 np.stack( (ref_c, reference[3:,:])).reshape((6,-1)) ,
+                 fontsize = fontsize)
+
+    ax.set_xlabel('$x$')
+    ax.set_ylabel('$y$')
+    ax.set_zlabel('$z$')
+
+    plt.savefig(name,bbox_inches='tight')
+    #plt.show()
+    plt.close()
+
+    return np.array([t_err, rot_err])
+
 #   My plots
+
+def plot_aligned(ax, state, ref, fontsize = 10):
+    camera = Camera()
+    for i in range(state.shape[1]):
+
+        #   New pose
+        camera.pose(state[:,i])
+        ax.plot([camera.p[0],camera.p[0]],
+                [camera.p[1],camera.p[1]],
+                [0,camera.p[2]],
+                color = 'k', linestyle=(0, (5, 10)),lw = 0.5)
+        camera.draw_camera(ax, scale=0.2, color='green', lw=1.1)
+        ax.text(camera.p[0],
+                camera.p[1],
+                camera.p[2],
+                str(i), fontsize = fontsize)
+
+        camera.pose(ref[:,i])
+        ax.plot([camera.p[0],camera.p[0]],
+                [camera.p[1],camera.p[1]],
+                [0,camera.p[2]],
+                color = 'k', linestyle=(0, (5, 10)),lw = 0.5)
+        camera.draw_camera(ax, scale=0.2, color='red',
+                                        linestyle = (0, (5, 10)) , lw = .7)
+        ax.text(camera.p[0],
+                camera.p[1],
+                camera.p[2],
+                str(i), fontsize = fontsize)
 
 def plot_time(ax, t_array,
               var_array,
@@ -293,18 +489,18 @@ def plot3D(directory, allStates, pd, name):
     #fig = plt.figure(frameon=False, figsize=(5,3))
     ax[0].axis('off')
     ax[0] = fig.add_subplot(1, 2, 1, projection='3d')
-    name = directory+"/3Dplot"
+    name = os.path.join(directory ,name)
 
-    x_min = allStates[0][0,0]
-    x_max = allStates[0][0,0]
-    y_min = allStates[0][1,0]
-    y_max = allStates[0][1,0]
-    z_min = allStates[0][2,0]
-    z_max = allStates[0][2,0]
+    x_min = allStates[0][1,0]
+    x_max = allStates[0][1,0]
+    y_min = allStates[0][2,0]
+    y_max = allStates[0][2,0]
+    z_min = allStates[0][3,0]
+    z_max = allStates[0][3,0]
 
     camera = Camera()
     for i in range(n_agents):
-        pos_array = allStates[i]
+        pos_array = allStates[i][1:,:]
         init = pos_array[:,0]
         end = pos_array[:,-1]
         x_min = min(x_min, init[0], end[0])
@@ -420,7 +616,12 @@ def read_data(directory,label, n):
                                         count = 5*rows)
                 position = position.reshape((rows,5))
                 position = position.T
+                _concat = (position[:4,:], np.zeros((2,rows)), position[4,:].reshape((1,-1)))
+                position = np.concatenate(_concat)
                 position[0,:] -= position[0,0]
+                # position[4,:] = -pi/2.
+                position[5,:] = pi/2.
+                # position[6,:] -= pi/2.
 
     name = os.path.join(directory ,f"velocities_{label}.dat")
     velocities = None
@@ -601,8 +802,9 @@ def get_pd(name):
 
     pd = (pd[:,:3],  np.zeros((n,2)), pd[:,3].reshape((-1,1)))
     pd = np.concatenate(pd, axis = 1)
-    pd[:,3] = -pi/2.
-    pd[:,5] -= pi
+    # pd[:,3] = pi/2.
+    pd[:,4] = pi/2.
+    # pd[:,5] -= pi/2.
     return pd.T
 
 def join_error(error):
@@ -637,6 +839,42 @@ def join_error(error):
 
     return {'t': t, 'v': new_error}
 
+def get_formation_error(position, pd, name):
+
+    if any([(i is None) for i in position]):
+        return None
+
+    #   Join time
+    n = len(position)
+    t = position[0][0,:]
+    error = np.zeros((t.shape[0],2))
+    idx = [0 for i in range(n)]
+    agents = [Camera() for i in range(n)]
+    for i in range(len(t)):
+        agents[0].pose(position[0][1:,i])
+        for j in range(1,n):
+            while idx[j] < position[j].shape[1] and position[j][0,idx[j]] < t[i] :
+                idx[j] += 1
+
+            if idx[j] == 0:
+                _position =  position[j][1:,0]
+            if idx[j] >= position[j].shape[1]:
+                _position =  position[j][1:,-1]
+            else:
+                delta = t[i] - position[j][0,idx[j]-1]
+                delta /= position[j][0,idx[j]] - position[j][0,idx[j]-1]
+                _position =  position[j][1:,idx[j]-1]
+                _position +=  delta * (position[j][1:,idx[j]] - position[j][1:,idx[j]-1] )
+            # print(_position)
+            agents[j].pose(_position)
+
+        error[i,:] =  error_state_6(pd,  agents)
+
+    #   plot last
+    error[i,:] =  error_state_6(pd,  agents, name = name)
+
+    return {'t': t, 'v': error}
+
 def fit_position(position):
 
     n = len(position)
@@ -660,43 +898,46 @@ def main(arg):
 
     for i in range(arg.n):
         position[i], velocities, n_e, arucos, error[i], log = read_data(directory,i, arg.n)
-
         s_ref = get_reference(arg.reference,
                             markers = markers,
                             out_directory = directory ,
                             label = i)
-        # print(s_ref)
-        # if not n_e is None:
-        #     print("Ploting  ")
-        #     plotNErr(directory, n_e, f"Error_{i}.pdf")
-        # if not velocities is None:
-        #     print("Ploting VELOCITIES ")
-        #     plotVel(directory, velocities, f"Velocities_{i}.pdf")
-        # if not arucos is None:
-        #     print("Ploting ArUcos")
-        #     plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
-        # if not error[i] is None:
-        #     print("Ploting Error")
-        #     plotError(directory, error[i], f"Error_runtime_{i}.pdf")
-        # if not position[i] is None:
-        #     print("Ploting 3D")
-        #     plotPosition(directory, position[i], f"State_{i}.pdf")
-        #
-        # for j in range(arg.n):
-        #     if not log[j] is None:
-        #         print("Ploting LOG")
-        #         plotLog(directory, log[j], f"LOG_SVD_D_{i}_{j}.pdf")
+        print(s_ref)
+        if not n_e is None:
+            print("Ploting  ")
+            plotNErr(directory, n_e, f"Error_{i}.pdf")
+        if not velocities is None:
+            print("Ploting VELOCITIES ")
+            plotVel(directory, velocities, f"Velocities_{i}.pdf")
+        if not arucos is None:
+            print("Ploting ArUcos")
+            plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
+        if not error[i] is None:
+            print("Ploting Error")
+            plotError(directory, error[i], f"Error_runtime_{i}.pdf")
+        if not position[i] is None:
+            print("Ploting 3D")
+            plotPosition(directory, position[i][[0,1,2,3,6],:], f"State_{i}.pdf")
+
+        for j in range(arg.n):
+            if not log[j] is None:
+                print("Ploting LOG")
+                plotLog(directory, log[j], f"LOG_SVD_D_{i}_{j}.pdf")
 
     jerror = join_error(error)
     if not jerror is None:
         print("Ploting Joined Error")
         plotError(directory, jerror, f"Error_joined.pdf")
 
-    position= fit_position(position)
+    formation_error = get_formation_error(position, pd, f"Error_final.pdf")
+    if not formation_error is None:
+        print("Ploting Joined Error")
+        plotError(directory, formation_error, f"Formation_error.pdf")
+
+    # position= fit_position(position)
     if not any([( i is None) for i in position]):
         print("Ploting 3D plot")
         plot3D(directory, position, pd, f"3DPlot.pdf")
-
 
 
 

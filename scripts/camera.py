@@ -289,7 +289,6 @@ class Camera:
                 color = 'k', linestyle=(0, (5, 10)), lw = 0.5)
 
         #   Cameras
-        print(position_array[:,0])
         self.pose(position_array[:,0])
         self.draw_camera(ax, scale=camera_scale, color='b', lw = lw)
         if label != "":
