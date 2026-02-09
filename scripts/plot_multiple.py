@@ -401,33 +401,34 @@ def plotVel(directory, data, name):
     plt.close()
 
 
-def plotNErr(directory, data, name):
+# def plotNErr(directory, data, name):
+#
+#     time = data[0,:]
+#     error = data[1,:]
+#
+#
+#         #   Plot error
+#     fig_e, ax_e = plt.subplots( figsize=(6,2))
+#     fig_e.suptitle("Error")
+#     plot_time(ax_e, time,error.reshape((1,-1)) )
+#
+#     print("Minimun error= "+ str(error.min()))
+#     name = os.path.join(directory ,name)
+#     plt.savefig(name,bbox_inches='tight')
+#     plt.close()
 
-    time = data[0,:]
-    error = data[1,:]
-
-
-        #   Plot error
-    fig_e, ax_e = plt.subplots( figsize=(6,2))
-    fig_e.suptitle("Error")
-    plot_time(ax_e, time,error.reshape((1,-1)) )
-
-    print("Minimun error= "+ str(error.min()))
-    name = os.path.join(directory ,name)
-    plt.savefig(name,bbox_inches='tight')
-    plt.close()
-
-def plotError(directory, error, name):
+def plotError(directory, error, name, th = 0., lims = None):
 
     fig, ax = plt.subplots( figsize=(6,2))
     fig.suptitle("Error")
     time = np.array(error["t"])
     _error = np.array(error["v"].T).copy()
-    plot_time(ax, time,_error, 0.1 )
+    plot_time(ax, time,_error, th )
     # ax.set_ylim([-.5,.5])
     name = os.path.join(directory ,name)
     plt.savefig(name ,bbox_inches='tight')
-    ax.set_ylim([-.81,.81])
+    if not lims is None:
+        ax.set_ylim(lims)
     plt.close()
 
 
@@ -657,6 +658,8 @@ def read_data(directory,label, n):
                 n_e = n_e.T
                 n_e[0,:] -= n_e[0,0]
 
+                n_e = {'t': n_e[0,:], 'v': n_e[1:,:].T}
+
     name = os.path.join(directory, f"arUcos_{label}.dat")
     arucos = None
     if os.path.exists(name):
@@ -694,6 +697,8 @@ def read_data(directory,label, n):
                     arucos[i]["v"] = arucos[i]["v"].reshape((-1,8))
                     arucos[i]["v"] = arucos[i]["v"].T
                     arucos[i]["t"] = [t - t0 for t in arucos[i]["t"]]
+
+
 
     error = [None]*n
     all_idx = set()
@@ -739,35 +744,119 @@ def read_data(directory,label, n):
                             error[k][i]["v"] = error[k][i]["v"].reshape((-1,8))
                             # error[k][i]["v"] = error[k][i]["v"].T
                             # error[k][i]["t"] = [t - t0 for t in error[k][i]["t"]]
-    #   Sum error
-    all_idx = list(all_idx)
-    all_idx.sort()
-    error[label] = {}
 
-    #   Join time
-    t = set()
-    for _dict in error: #   For each agent
-        # print(_dict)
-        for idx in _dict:   # for each aruco
-            # print(idx)
-            for _t in _dict[idx]['t']: # For each time step
-                t.add(_t)
-    t = list(t)
-    t.sort()    #   Just in case
+    t0 = None
+    if any([not _dict is None for _dict in error ]):
+        #   Sum error
+        all_idx = list(all_idx)
+        all_idx.sort()
+        error[label] = {}
 
-    # Sum error
-    new_error = np.zeros((len(t),8*len(all_idx)))
-    for i in range(len(t)):
-        _v = np.zeros(8*len(all_idx)) # _v the error at a time step
+        #   Join time
+        t = set()
         for _dict in error: #   For each agent
+            # print(_dict)
             for idx in _dict:   # for each aruco
-                if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
-                    t_id = _dict[idx]['t'].index(t[i])
-                    v_id = all_idx.index(idx)
-                    _v[v_id*8 : v_id*8+8] += _dict[idx]['v'][t_id]
-        new_error[i,:] = _v # Tal vez copy
-    t0 = t[0]
-    error = {'t': [_t-t0 for _t in t], 'v': new_error}
+                # print(idx)
+                for _t in _dict[idx]['t']: # For each time step
+                    t.add(_t)
+        t = list(t)
+        t.sort()    #   Just in case
+
+        # Sum error
+        new_error = np.zeros((len(t),8*len(all_idx)))
+        for i in range(len(t)):
+            _v = np.zeros(8*len(all_idx)) # _v the error at a time step
+            for _dict in error: #   For each agent
+                for idx in _dict:   # for each aruco
+                    if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
+                        t_id = _dict[idx]['t'].index(t[i])
+                        v_id = all_idx.index(idx)
+                        _v[v_id*8 : v_id*8+8] += _dict[idx]['v'][t_id]
+            new_error[i,:] = _v # Tal vez copy
+        t0 = t[0]
+        error = {'t': [_t-t0 for _t in t], 'v': new_error}
+    else:
+        error = None
+
+    error_int = [None]*n
+    all_idx = set()
+    for k in range(n):
+        if k != label:
+            name = os.path.join(directory ,f"error_int_{label}_{k}.dat")
+
+            if os.path.exists(name):
+                length = os.path.getsize(name)
+                if length > 0:
+                    with open(name, 'rb') as fileH:
+                        size = 9*d + 8
+                        rows = (length) / size
+                        rows = int(np.floor(rows))
+
+                        error_int[k] = {}
+
+                        for i in range (rows):
+                            time = np.fromfile(fileH,
+                                                dtype = np.float64,
+                                                count = 1)
+                            time = time[0]
+                            idx = np.fromfile(fileH,
+                                                dtype = np.int64,
+                                                count = 1)
+                            idx = idx[0]
+                            all_idx.add(idx)
+                            _error = np.fromfile(fileH,
+                                                dtype = np.float64,
+                                                count = 8)
+                            if (any(_error > 10)):
+                                print(_error)
+                            if idx in error_int[k]:
+                                error_int[k][idx]["t"].append(time)
+                                error_int[k][idx]["v"] = np.concatenate([error_int[k][idx]["v"],_error])
+                            else:
+                                _d = {"t":[time], "v":_error}
+                                error_int[k][idx] = _d
+
+                        # t0 = [ error_int[k][key]["t"][0] for  key in error_int[k]]
+                        # t0 = min(t0)
+                        for i in error_int[k]:
+                            error_int[k][i]["v"] = error_int[k][i]["v"].reshape((-1,8))
+                            # error_int[k][i]["v"] = error_int[k][i]["v"].T
+                            # error_int[k][i]["t"] = [t - t0 for t in error_int[k][i]["t"]]
+
+    if any([not _dict is None for _dict in error_int ]):
+        #   Sum error
+        all_idx = list(all_idx)
+        all_idx.sort()
+        error_int[label] = {}
+
+        #   Join time
+        t = set()
+        for _dict in error_int: #   For each agent
+            # print(_dict)
+            for idx in _dict:   # for each aruco
+                # print(idx)
+                for _t in _dict[idx]['t']: # For each time step
+                    t.add(_t)
+        t = list(t)
+        t.sort()    #   Just in case
+
+        # Sum error
+        new_error = np.zeros((len(t),8*len(all_idx)))
+        for i in range(len(t)):
+            _v = np.zeros(8*len(all_idx)) # _v the error at a time step
+            for _dict in error_int: #   For each agent
+                for idx in _dict:   # for each aruco
+                    if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
+                        t_id = _dict[idx]['t'].index(t[i])
+                        v_id = all_idx.index(idx)
+                        _v[v_id*8 : v_id*8+8] += _dict[idx]['v'][t_id]
+            new_error[i,:] = _v # Tal vez copy
+        if t0 is None:
+            t0 = t[0]
+        error_int = {'t': [_t-t0 for _t in t], 'v': new_error}
+    else:
+        error_int = None
 
     name = os.path.join(directory ,f"log_{label}.dat")
     log = [None]*n
@@ -788,7 +877,7 @@ def read_data(directory,label, n):
                         log[k] = log[k].T
                     log[k][0,:] -= log[k][0,0]
 
-    return position, velocities, n_e, arucos, error, log
+    return position, velocities, n_e, arucos, error, error_int, log
 
  #      -----------------------------------------------------------
  #      -----------------------------------------------------------
@@ -901,7 +990,7 @@ def main(arg):
     position = [None]*arg.n
 
     for i in range(arg.n):
-        position[i], velocities, n_e, arucos, error[i], log = read_data(directory,i, arg.n)
+        position[i], velocities, n_e, arucos, error[i], error_int, log = read_data(directory,i, arg.n)
         s_ref = get_reference(arg.reference,
                             markers = markers,
                             out_directory = directory ,
@@ -909,7 +998,8 @@ def main(arg):
         print(s_ref)
         if not n_e is None:
             print("Ploting  ")
-            plotNErr(directory, n_e, f"Error_{i}.pdf")
+            # plotNErr(directory, n_e, f"Error_{i}.pdf")
+            plotError(directory, n_e, f"Error_{i}.pdf", th = 0.1)
         if not velocities is None:
             print("Ploting VELOCITIES ")
             plotVel(directory, velocities, f"Velocities_{i}.pdf")
@@ -918,7 +1008,10 @@ def main(arg):
             plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
         if not error[i] is None:
             print("Ploting Error")
-            plotError(directory, error[i], f"Error_runtime_{i}.pdf")
+            plotError(directory, error[i], f"Error_runtime_{i}.pdf", lims= [-.81,.81])
+        if not error_int is None:
+            print("Ploting Integral Error")
+            plotError(directory, error_int, f"Error_int_{i}.pdf")
         if not position[i] is None:
             print("Ploting 3D")
             plotPosition(directory, position[i][[0,1,2,3,6],:], f"State_{i}.pdf")
@@ -936,7 +1029,7 @@ def main(arg):
     formation_error = get_formation_error(position, pd, f"Error_final.pdf")
     if not formation_error is None:
         print("Ploting Joined Error")
-        plotError(directory, formation_error, f"Formation_error.pdf")
+        plotError(directory, formation_error, f"Formation_error.pdf", th = 0.1)
 
     # position= fit_position(position)
     if not any([( i is None) for i in position]):

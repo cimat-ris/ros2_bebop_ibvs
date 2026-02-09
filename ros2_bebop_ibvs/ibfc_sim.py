@@ -113,6 +113,7 @@ class Controller(Node):
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
+        self.declare_parameter('gain_int', 0.)
         self.declare_parameter('gain_w', 1.)
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
@@ -132,6 +133,7 @@ class Controller(Node):
         self.img_depth = self.get_parameter('img_depth').value
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
+        self.k_int = self.get_parameter('gain_int').value
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
         self.initial_cond = self.get_parameter('p0').value
@@ -264,6 +266,13 @@ class Controller(Node):
                 self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
                 with open(self.log_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
+        if self.k_int != 0.:
+            self.error_int_d = [None]*self.n_agents
+            for j in range(self.n_agents):
+                if j != self.label:
+                    self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
+                    with open(self.error_int_d[j], 'w') as file:
+                        pass  # 'w' mode clears the file's contents
 
         # output_filename = os.path.join(self.output, f"video_{self.label}.mp4")
         # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use appropriate codec
@@ -285,6 +294,18 @@ class Controller(Node):
         self.m_vel = Twist()
         self.cv_image = None
         self.error = [None]*self.n_agents
+        self._err_int = [None]*self.n_agents
+        self.norm = -1.
+        if self.k_int != 0:
+            self.ids_int = [[] for i in range(self.n_agents)]
+            self.err_int = [[] for i in range(self.n_agents)]
+            # self.err_int = [np.array([[],[]])]*self.n_agents
+            self.control = self.control_int
+            self.tick = -1.
+            self.tock = -1.
+
+        else:
+            self.control = self.control_p
         self.svd = [None]*self.n_agents
 
         # INIT control loop
@@ -381,16 +402,11 @@ class Controller(Node):
             binary = struct.pack('ddddd', *data)
             f.write(binary)
 
-
-        with open(self.norm_e_d, 'ab') as f:
-            _norm = 0.
-            for j in range(self.n_agents):
-                if j != self.label:
-                    _v = self.error[j].reshape(-1)
-                    _norm += np.dot(_v,_v)
-            data = (t,np.sqrt(_norm))
-            binary = struct.pack('dd', *data)
-            f.write(binary)
+        if self.norm >= .0:
+            with open(self.norm_e_d, 'ab') as f:
+                data = (t,self.norm)
+                binary = struct.pack('dd', *data)
+                f.write(binary)
 
         with open(self.arucos_d, 'ab') as f:
             for i in range(len(self.ids[self.label])):
@@ -412,6 +428,21 @@ class Controller(Node):
                             data += tuple(np.zeros(diff))
                         binary = struct.pack('didddddddd', *data)
                         f.write(binary)
+
+        #   Integral error
+        if self.k_int != 0.:
+            for j in range(self.n_agents):
+                if  not self._err_int[j] is None:
+                    with open(self.error_int_d[j], 'ab') as f:
+                        for i in range(len(self.ids[j])):
+
+                            data = (t, self.ids[j][i])
+                            data += tuple(self._err_int[j][:,4*i:4*(i+1)].T.reshape(-1))
+                            diff = 10 - len(data)
+                            if diff !=0:
+                                data += tuple(np.zeros(diff))
+                            binary = struct.pack('didddddddd', *data)
+                            f.write(binary)
 
         # save log
         if not self.enable_log:
@@ -488,6 +519,188 @@ class Controller(Node):
 
         return _query, match_1, match_2, match_3, match_4
 
+    def control_p(self, _image = None):
+        for j in range(self.n_agents):
+            if j != self. label and (not  self.points[j] is None):
+
+                #   mask
+                ids, idi, idj, idir, idjr = self.get_mathing(j)
+
+                # self.get_logger().info(f"self.points[{self.label}] ")
+                # self.get_logger().info(f"{self.points[self.label]} ")
+                points_i = self.points[self.label][:,idi]
+                points_j = self.points[j][:,idj]
+                points_ref = self.points_ref[self.label][:,idir]
+                points_ref_j = self.points_ref[j][:,idjr]
+
+                complement = points_j  + (points_ref - points_ref_j)
+                # complement = points_ref
+                # complement[1,:] += 0.5
+                self.error[j] = points_i - complement
+                self.L = interaction_matrix_xyz(complement, self.img_depth)
+                # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                L_inv = Inv_Moore_Penrose(self.L)
+
+                if self.enable_log:
+                    _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+                if L_inv is None:
+                    self.get_logger().error("Invalid Ls matrix")
+                    continue
+
+                self._u += - self.gain * L_inv @ self.error[j].T.reshape(-1)
+
+                if not _image is None:
+                    complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
+                    complement[1,:] = complement[1,:]*self.f[1] + self.pPrinc[1]
+                    complement = complement.T.reshape((len(ids), 4,2)).astype(float)
+                    complement = tuple(complement[i].reshape((1,4,2)) for i in range(len(ids)))
+                    view_ids = np.array(ids)
+                    cv2.aruco.drawDetectedMarkers(_image,
+                                complement,
+                                view_ids,
+                                borderColor = (50,1.,0.) )
+
+        #   6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return _image
+
+    def get_mathing_int(self, query, j):
+
+        _err = np.zeros((2,4*len(query)))
+        for i in range(len(query)):
+            q = query[i]
+            if q in self.ids_int[j]:
+                k =  self.ids_int[j].index(q)
+                _err[:,4*i:4*i+4] = self.err_int[j][k]
+
+        return _err
+
+    def error_int(self, query, j):
+
+
+        self.tick = self.tock
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        dt = self.tock - self.tick
+
+        if self.tick < 0. or self.tock < 0.:
+            return
+
+        for i in range(len(query)):
+            q = query[i]
+            _err = self.error[j][:,i*4: i*4 +4]
+            if q in self.ids_int[j]:
+                k =  self.ids_int[j].index(q)
+                self.err_int[j][k] += _err*dt
+                # print(self.err_int[j][k])
+                # print(f"Int err from {j} to {self.label} = {_err.reshape(-1)*dt}")
+            else:
+                self.ids_int[j].append(q)
+                self.err_int[j].append(_err)
+
+    # def get_mathing_int(self, query, j):
+    #
+    #     _err = np.zeros((2,len(query)))
+    #     for q in query:
+    #         if q in self.ids_int[j]:
+    #             k =  self.ids_int[j].index(q)
+    #             _err = self.err_int[j][:,k*4: k*4 +4]
+    #
+    #     return _err
+    #
+    # def error_int(self, query, dt, j):
+    #
+    #     for i in range(len(query)):
+    #         q = query[i]
+    #         _err = self.error[j][:,i*4: i*4 +4]
+    #         if q in self.ids_int[j]:
+    #             k =  self.ids_int[j].index(q)
+    #             self.err_int[j][:,k*4: k*4 +4] += _err*dt
+    #         else:
+    #             self.ids_int[j].append(q)
+    #             self.err_int[j] = np.concatenate((self.err_int[j], _err), axis = 1 )
+
+    def control_int(self, _image = None):
+        for j in range(self.n_agents):
+            if j != self. label and (not  self.points[j] is None):
+
+                #   mask
+                ids, idi, idj, idir, idjr = self.get_mathing(j)
+                self._err_int[j] = self.get_mathing_int(ids, j)
+
+
+                # self.get_logger().info(f"self.points[{self.label}] ")
+                # self.get_logger().info(f"{self.points[self.label]} ")
+                points_i = self.points[self.label][:,idi]
+                points_j = self.points[j][:,idj]
+                points_ref = self.points_ref[self.label][:,idir]
+                points_ref_j = self.points_ref[j][:,idjr]
+
+                complement = points_j  + (points_ref - points_ref_j)
+                # complement = points_ref
+                # complement[1,:] += 0.5
+                self.error[j] = points_i - complement
+
+                # print(ids, self._err_int[j], self.error[j])
+                self.L = interaction_matrix_xyz(complement, self.img_depth)
+                # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
+                L_inv = Inv_Moore_Penrose(self.L)
+
+                if self.enable_log:
+                    _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+                if L_inv is None:
+                    self.get_logger().error("Invalid Ls matrix")
+                    continue
+
+                _arg = self.error[j].T.reshape(-1) + self.k_int * self._err_int[j].T.reshape(-1)
+                self._u += - self.gain * L_inv @ _arg
+
+                if not _image is None:
+                    complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
+                    complement[1,:] = complement[1,:]*self.f[1] + self.pPrinc[1]
+                    complement = complement.T.reshape((len(ids), 4,2)).astype(float)
+                    complement = tuple(complement[i].reshape((1,4,2)) for i in range(len(ids)))
+                    view_ids = np.array(ids)
+                    cv2.aruco.drawDetectedMarkers(_image,
+                                complement,
+                                view_ids,
+                                borderColor = (50,1.,0.) )
+                self.error_int(ids, j )
+
+
+        # print(self.err_int)
+        #   6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return _image
 
     def control_loop(self):
 
@@ -677,68 +890,19 @@ class Controller(Node):
 
             #   IBFC
             self._u = np.zeros(6)
+            if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
+                _image = self.control_int(_image)
 
-            if not self.points[self.label] is None:
-                for j in range(self.n_agents):
-                    if j != self. label and (not  self.points[j] is None):
+            else:
+                _image = self.control_p(_image)
+            # _image = self.control(_image)
 
-                        #   mask
-                        ids, idi, idj, idir, idjr = self.get_mathing(j)
-
-                        # self.get_logger().info(f"self.points[{self.label}] ")
-                        # self.get_logger().info(f"{self.points[self.label]} ")
-                        points_i = self.points[self.label][:,idi]
-                        points_j = self.points[j][:,idj]
-                        points_ref = self.points_ref[self.label][:,idir]
-                        points_ref_j = self.points_ref[j][:,idjr]
-
-                        complement = points_j  + (points_ref - points_ref_j)
-                        # complement = points_ref
-                        # complement[1,:] += 0.5
-                        self.error[j] = points_i - complement
-                        self.L = interaction_matrix_xyz(complement, self.img_depth)
-                        # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
-                        # self.L = interaction_matrix_xyz(points_ref, self.img_depth)
-                        L_inv = Inv_Moore_Penrose(self.L)
-
-                        if self.enable_log:
-                            _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
-
-                        if L_inv is None:
-                            self.get_logger().error("Invalid Ls matrix")
-                            continue
-
-                        self._u += - self.gain * L_inv @ self.error[j].T.reshape(-1)
-
-                        if not _image is None:
-                            complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
-                            complement[1,:] = complement[1,:]*self.f[1] + self.pPrinc[1]
-                            complement = complement.T.reshape((len(ids), 4,2)).astype(float)
-                            complement = tuple(complement[i].reshape((1,4,2)) for i in range(len(ids)))
-                            view_ids = np.array(ids)
-                            cv2.aruco.drawDetectedMarkers(_image,
-                                        complement,
-                                        view_ids,
-                                        borderColor = (50,1.,0.) )
-            # if self.label == 3:
-            #     self.get_logger().info(f"u = {self._u}")
-
-
-            #   6DOF
-            _w = self.R_cam @ self._u[3:]
-            _v = (self.R_cam @ self._u[:3]).reshape(-1)
-            _v += np.cross( self.t_cam , _w.reshape(-1) )
-            _w *= self.kw
-            self.u[:3] = _v.copy()
-            self.u[3:] = _w.reshape(-1)
-            #   4DOF
-            # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-            # _v = (self.R_cam @ self._u[:3]).reshape(-1)
-            # _v += np.cross( self.t_cam , _w.reshape(-1) )
-            # _w *= self.kw
-            # self.u[:3] = _v.copy()
-            # self.u[3:] = _w.copy()
-
+            _norm = 0.
+            for j in range(self.n_agents):
+                if j != self.label:
+                    _v = self.error[j].reshape(-1)
+                    _norm += np.dot(_v,_v)
+            self.norm = np.sqrt(_norm)
 
             self.m_vel.linear.x = float(self.u[0])
             self.m_vel.linear.y = float(self.u[1])
