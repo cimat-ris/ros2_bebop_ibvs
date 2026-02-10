@@ -16,6 +16,10 @@ p0: [2., -2.,2., 1.22,
      1., -1.,1., 1.22]
 n_agents: 4
 
+L: [0, 1, 1, 1,
+    1, 0, 1, 1,
+    1, 1, 0, 1,
+    1, 1, 1, 0]
 
 frequency: 20.
 robot_name_prefix: "parrot_bebop_2"
@@ -26,7 +30,7 @@ gain_takeoff: .5
 
 polar: false
 gain: .4
-gain_int: .4
+gain_int: 1.
 gain_w: 1.
 img_depth: 4.
 

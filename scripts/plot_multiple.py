@@ -425,10 +425,10 @@ def plotError(directory, error, name, th = 0., lims = None):
     _error = np.array(error["v"].T).copy()
     plot_time(ax, time,_error, th )
     # ax.set_ylim([-.5,.5])
-    name = os.path.join(directory ,name)
-    plt.savefig(name ,bbox_inches='tight')
     if not lims is None:
         ax.set_ylim(lims)
+    name = os.path.join(directory ,name)
+    plt.savefig(name ,bbox_inches='tight')
     plt.close()
 
 
@@ -1008,10 +1008,10 @@ def main(arg):
             plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
         if not error[i] is None:
             print("Ploting Error")
-            plotError(directory, error[i], f"Error_runtime_{i}.pdf", lims= [-.81,.81])
+            plotError(directory, error[i], f"Error_runtime_{i}.pdf", lims = [-2,2])
         if not error_int is None:
             print("Ploting Integral Error")
-            plotError(directory, error_int, f"Error_int_{i}.pdf")
+            plotError(directory, error_int, f"Error_int_{i}.pdf", lims = [-2,2])
         if not position[i] is None:
             print("Ploting 3D")
             plotPosition(directory, position[i][[0,1,2,3,6],:], f"State_{i}.pdf")
@@ -1026,7 +1026,8 @@ def main(arg):
         print("Ploting Joined Error")
         plotError(directory, jerror, f"Error_joined.pdf")
 
-    formation_error = get_formation_error(position, pd, f"Error_final.pdf")
+    name = os.path.join(directory,'Error_final.pdf')
+    formation_error = get_formation_error(position, pd, name)
     if not formation_error is None:
         print("Ploting Joined Error")
         plotError(directory, formation_error, f"Formation_error.pdf", th = 0.1)

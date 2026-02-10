@@ -117,6 +117,7 @@ class Controller(Node):
         self.declare_parameter('gain_w', 1.)
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
+        self.declare_parameter('L', [0])
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
@@ -136,6 +137,7 @@ class Controller(Node):
         self.k_int = self.get_parameter('gain_int').value
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
+        self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
@@ -145,11 +147,24 @@ class Controller(Node):
         self.initial_cond = self.initial_cond.reshape((-1,4))
         self.initial_cond = self.initial_cond[self.label].reshape(-1)
 
+        print(f"{self.label}_ki  = {self.k_int}")
+
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
         print(self.K)
+
+        #   Graph Laplacian
+        if len(self.L) != self.n_agents**2 :
+            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
+            self.L = np.ones((self.n_agents,self.n_agents)) - np.eye(self.n_agents)
+        else:
+            self.L = np.array(self.L).reshape((-1,self.n_agents))
+        _neighbors = self.L[self.label,:].tolist()
+        self.in_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
+        _neighbors = self.L[:,self.label].tolist()
+        self.out_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
 
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
@@ -231,17 +246,17 @@ class Controller(Node):
         #   TODO: graph
         self.features_sub  = []
         self.features_pub  = []
-        for i in range(self.n_agents):
-            if i != self.label:
-                _pub = self.create_publisher(Corners,
-                                f"/{self.robot_name}_{self.label}_{i}/ArUcos",
-                                qos)
-                self.features_pub.append(_pub)
-                _sub = self.create_subscription(Corners,
-                                f"/{self.robot_name}_{i}_{self.label}/ArUcos",
-                                self.feature_receiver,
-                                qos)
-                self.features_sub.append(_sub)
+        for i in self.out_neighbors:
+            _pub = self.create_publisher(Corners,
+                            f"/{self.robot_name}_{self.label}_{i}/ArUcos",
+                            qos)
+            self.features_pub.append(_pub)
+        for i in self.in_neighbors:
+            _sub = self.create_subscription(Corners,
+                            f"/{self.robot_name}_{i}_{self.label}/ArUcos",
+                            self.feature_receiver,
+                            qos)
+            self.features_sub.append(_sub)
         
         #   output files for data storage:
         self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
@@ -258,21 +273,19 @@ class Controller(Node):
             pass  # 'w' mode clears the file's contents
         self.error_d = [None]*self.n_agents
         self.log_d = [None]*self.n_agents
-        for j in range(self.n_agents):
-            if j != self.label:
-                self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
-                with open(self.error_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-                self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
-                with open(self.log_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
+        for j in self.in_neighbors:
+            self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
+            with open(self.error_d[j], 'w') as file:
+                pass  # 'w' mode clears the file's contents
+            self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
+            with open(self.log_d[j], 'w') as file:
+                pass  # 'w' mode clears the file's contents
         if self.k_int != 0.:
             self.error_int_d = [None]*self.n_agents
-            for j in range(self.n_agents):
-                if j != self.label:
-                    self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-                    with open(self.error_int_d[j], 'w') as file:
-                        pass  # 'w' mode clears the file's contents
+            for j in self.in_neighbors:
+                self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
+                with open(self.error_int_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
 
         # output_filename = os.path.join(self.output, f"video_{self.label}.mp4")
         # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use appropriate codec
@@ -416,18 +429,17 @@ class Controller(Node):
                 binary = struct.pack('didddddddd', *data)
                 f.write(binary)
 
-        for j in range(self.n_agents):
-            if j != self.label:
-                with open(self.error_d[j], 'ab') as f:
-                    for i in range(len(self.ids[j])):
+        for j in self.in_neighbors:
+            with open(self.error_d[j], 'ab') as f:
+                for i in range(len(self.ids[j])):
 
-                        data = (t, self.ids[j][i])
-                        data += tuple(self.error[j][:,4*i:4*(i+1)].T.reshape(-1))
-                        diff = 10 - len(data)
-                        if diff !=0:
-                            data += tuple(np.zeros(diff))
-                        binary = struct.pack('didddddddd', *data)
-                        f.write(binary)
+                    data = (t, self.ids[j][i])
+                    data += tuple(self.error[j][:,4*i:4*(i+1)].T.reshape(-1))
+                    diff = 10 - len(data)
+                    if diff !=0:
+                        data += tuple(np.zeros(diff))
+                    binary = struct.pack('didddddddd', *data)
+                    f.write(binary)
 
         #   Integral error
         if self.k_int != 0.:
@@ -447,16 +459,15 @@ class Controller(Node):
         # save log
         if not self.enable_log:
             return
-        for j in range(self.n_agents):
-            if j != self.label:
-                with open(self.log_d[j], 'ab') as f:
-                    data = (t,)
-                    # data += tuple(self.L.reshape(-1))
-                    data += tuple(self.svd[j].reshape(-1))
-                    # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
-                    binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
-                    # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
-                    f.write(binary)
+        for j in self.in_neighbors:
+            with open(self.log_d[j], 'ab') as f:
+                data = (t,)
+                # data += tuple(self.L.reshape(-1))
+                data += tuple(self.svd[j].reshape(-1))
+                # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
+                binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
+                # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
+                f.write(binary)
 
     def feature_receiver(self, msg):
 
@@ -520,8 +531,8 @@ class Controller(Node):
         return _query, match_1, match_2, match_3, match_4
 
     def control_p(self, _image = None):
-        for j in range(self.n_agents):
-            if j != self. label and (not  self.points[j] is None):
+        for j in self.in_neighbors:
+            if not  self.points[j] is None:
 
                 #   mask
                 ids, idi, idj, idir, idjr = self.get_mathing(j)
@@ -635,8 +646,8 @@ class Controller(Node):
     #             self.err_int[j] = np.concatenate((self.err_int[j], _err), axis = 1 )
 
     def control_int(self, _image = None):
-        for j in range(self.n_agents):
-            if j != self. label and (not  self.points[j] is None):
+        for j in self.in_neighbors:
+            if not  self.points[j] is None:
 
                 #   mask
                 ids, idi, idj, idir, idjr = self.get_mathing(j)
@@ -898,10 +909,9 @@ class Controller(Node):
             # _image = self.control(_image)
 
             _norm = 0.
-            for j in range(self.n_agents):
-                if j != self.label:
-                    _v = self.error[j].reshape(-1)
-                    _norm += np.dot(_v,_v)
+            for j in self.in_neighbors:
+                _v = self.error[j].reshape(-1)
+                _norm += np.dot(_v,_v)
             self.norm = np.sqrt(_norm)
 
             self.m_vel.linear.x = float(self.u[0])

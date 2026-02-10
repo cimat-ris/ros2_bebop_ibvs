@@ -23,6 +23,7 @@ def generate_launch_description():
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
     config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_f')
+    config['use_sim_time'] = True
     if not os.path.exists(config["output"]):
         print(f"Output directory  {config["output"]} does not exists")
         return
@@ -98,8 +99,16 @@ def generate_launch_description():
             )
         controller.append(_controller)
 
-    run = [gz_sim]
-    run+= [ROSTimer(period = 1.,
+    #   Time bridge
+    time_bridge = Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            name = 'time',
+            output='screen',
+            arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock']
+        )
+    run = [gz_sim, time_bridge]
+    run += [ROSTimer(period = 5.,
                  actions = models + bridge + controller)]
 
     return LaunchDescription(run)
