@@ -22,7 +22,7 @@ def generate_launch_description():
     yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'ibfc_sim.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
-    config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_f')
+    config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', config['ref_prefix'])
     config['use_sim_time'] = True
     if not os.path.exists(config["output"]):
         print(f"Output directory  {config["output"]} does not exists")
@@ -98,6 +98,15 @@ def generate_launch_description():
                 parameters=[config]
             )
         controller.append(_controller)
+    # #   state relay
+    _controller = Node(
+            package='ros2_bebop_ibvs',
+            executable='sim_control',
+            name='sim_control',
+            output='screen',
+            parameters=[config]
+        )
+    controller.append(_controller)
 
     #   Time bridge
     time_bridge = Node(

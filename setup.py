@@ -32,6 +32,7 @@ setup(
             "ibvs_sim = ros2_bebop_ibvs.ibvs_sim:main",
             "ibvs_real = ros2_bebop_ibvs.ibvs_real:main",
             "ibfc_sim = ros2_bebop_ibvs.ibfc_sim:main",
+            "sim_control = ros2_bebop_ibvs.sim_control:main",
         ],
     },
 )

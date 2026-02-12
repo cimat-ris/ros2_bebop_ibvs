@@ -381,7 +381,7 @@ def plotPosition(directory, data, name):
     plt.savefig(name,bbox_inches='tight')
     plt.close()
 
-def plotVel(directory, data, name):
+def plotVel(directory, data, name, lims = [-1.1,1.1]):
 
     time = data[0,:]
     velocities = data[1:,:]
@@ -394,7 +394,7 @@ def plotVel(directory, data, name):
     fig_v.suptitle("Velocities")
     symbols = plot_time(ax_v, time, velocities, color_offset = 1)
     ax_v.legend(symbols,labels, loc=1)
-    ax_v.set_ylim([-2.1,2.1])
+    ax_v.set_ylim(lims)
     # plt.show()
     name = os.path.join(directory ,name)
     plt.savefig(name,bbox_inches='tight')
@@ -643,6 +643,34 @@ def read_data(directory,label, n):
                 velocities = velocities.T
                 velocities[0,:] -= velocities[0,0]
 
+    velocities_log = [None, None]
+    name = os.path.join(directory ,f"log_vel_prop_{label}.dat")
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                rows = (length) / (5* d)
+                rows = int(np.floor(rows))
+                velocities_log[0] = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 5*rows)
+                velocities_log[0] = velocities_log[0].reshape((rows,5))
+                velocities_log[0] = velocities_log[0].T
+                velocities_log[0][0,:] -= velocities_log[0][0,0]
+    name = os.path.join(directory ,f"log_vel_int_{label}.dat")
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                rows = (length) / (5* d)
+                rows = int(np.floor(rows))
+                velocities_log[1] = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 5*rows)
+                velocities_log[1] = velocities_log[1].reshape((rows,5))
+                velocities_log[1] = velocities_log[1].T
+                velocities_log[1][0,:] -= velocities_log[1][0,0]
+
     name = os.path.join(directory ,f"norm_error_{label}.dat")
     n_e = None
     if os.path.exists(name):
@@ -877,7 +905,7 @@ def read_data(directory,label, n):
                         log[k] = log[k].T
                     log[k][0,:] -= log[k][0,0]
 
-    return position, velocities, n_e, arucos, error, error_int, log
+    return position, velocities, velocities_log, n_e, arucos, error, error_int, log
 
  #      -----------------------------------------------------------
  #      -----------------------------------------------------------
@@ -990,7 +1018,7 @@ def main(arg):
     position = [None]*arg.n
 
     for i in range(arg.n):
-        position[i], velocities, n_e, arucos, error[i], error_int, log = read_data(directory,i, arg.n)
+        position[i], velocities, velocities_log, n_e, arucos, error[i], error_int, log = read_data(directory,i, arg.n)
         s_ref = get_reference(arg.reference,
                             markers = markers,
                             out_directory = directory ,
@@ -1003,15 +1031,21 @@ def main(arg):
         if not velocities is None:
             print("Ploting VELOCITIES ")
             plotVel(directory, velocities, f"Velocities_{i}.pdf")
+        if not velocities_log[0] is None:
+            print("Ploting VELOCITIES Log Proportional ")
+            plotVel(directory, velocities_log[0], f"Velocities_prop_{i}.pdf")
+        if not velocities_log[1] is None:
+            print("Ploting VELOCITIES Log Integral ")
+            plotVel(directory, velocities_log[1], f"Velocities_int_{i}.pdf")
         if not arucos is None:
             print("Ploting ArUcos")
             plotArucos(directory,  arucos, s_ref, f"ArUcos_{i}.pdf")
         if not error[i] is None:
             print("Ploting Error")
-            plotError(directory, error[i], f"Error_runtime_{i}.pdf", lims = [-2,2])
+            plotError(directory, error[i], f"Error_runtime_{i}.pdf", lims = [-1,1])
         if not error_int is None:
             print("Ploting Integral Error")
-            plotError(directory, error_int, f"Error_int_{i}.pdf", lims = [-2,2])
+            plotError(directory, error_int, f"Error_int_{i}.pdf", lims = [-1,1])
         if not position[i] is None:
             print("Ploting 3D")
             plotPosition(directory, position[i][[0,1,2,3,6],:], f"State_{i}.pdf")
@@ -1030,7 +1064,7 @@ def main(arg):
     formation_error = get_formation_error(position, pd, name)
     if not formation_error is None:
         print("Ploting Joined Error")
-        plotError(directory, formation_error, f"Formation_error.pdf", th = 0.1)
+        plotError(directory, formation_error, f"Formation_error.pdf", th = 0.0)
 
     # position= fit_position(position)
     if not any([( i is None) for i in position]):

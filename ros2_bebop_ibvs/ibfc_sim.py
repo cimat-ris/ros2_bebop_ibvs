@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 import struct
 import os
+import yaml
 
 IDLE = 0
 IBFC = 1
@@ -101,53 +102,15 @@ class Controller(Node):
     def __init__(self):
         super().__init__('controller')
         
-        # Parameters
-        self.declare_parameter('frequency', 50.0)
-        self.declare_parameter('robot_name_prefix', 'bebop')
-        self.declare_parameter('takeoff_threshold', 0.04)
-        self.declare_parameter('landing_threshold', 0.08)
-        self.declare_parameter('takeoff_height', 1.0)
-        self.declare_parameter('label', 1)
-        self.declare_parameter('n_agents', 1)
-        self.declare_parameter('reference_image_prefix', "reference_f")
-        self.declare_parameter('output', "output")
-        self.declare_parameter('img_depth', 1.)
-        self.declare_parameter('gain', 1.)
-        self.declare_parameter('gain_int', 0.)
-        self.declare_parameter('gain_w', 1.)
-        self.declare_parameter('gain_takeoff', 1.)
-        self.declare_parameter('K', [1.]*9)
-        self.declare_parameter('L', [0])
-        self.declare_parameter('p0', [1.]*4)
-        self.declare_parameter('polar', False)
-        self.declare_parameter('save_log', False)
-        
-        self.frequency = self.get_parameter('frequency').value
-        self.robot_name = self.get_parameter('robot_name_prefix').value.strip()
-        self.takeoff_threshold = self.get_parameter('takeoff_threshold').value
-        self.landing_threshold = self.get_parameter('landing_threshold').value
-        self.takeoff_height = self.get_parameter('takeoff_height').value
-        self.label = self.get_parameter('label').value
-        self.n_agents = self.get_parameter('n_agents').value
-        self.reference_image_prefix = self.get_parameter('reference_image_prefix').value
-        self.output = self.get_parameter('output').value
-        self.img_depth = self.get_parameter('img_depth').value
-        self.gain = self.get_parameter('gain').value
-        self.kw = self.get_parameter('gain_w').value
-        self.k_int = self.get_parameter('gain_int').value
-        self.gain_takeoff = self.get_parameter('gain_takeoff').value
-        self.K = self.get_parameter('K').value
-        self.L = self.get_parameter('L').value
-        self.initial_cond = self.get_parameter('p0').value
-        self.enable_polar = self.get_parameter('polar').value
-        self.enable_log = self.get_parameter('save_log').value
+        #   Save data
+        self.proc_paramaters()
 
         #   inital conditions
         self.initial_cond =  np.array(self.initial_cond)
         self.initial_cond = self.initial_cond.reshape((-1,4))
         self.initial_cond = self.initial_cond[self.label].reshape(-1)
 
-        print(f"{self.label}_ki  = {self.k_int}")
+        self.get_logger().info(f"{self.label}_ki  = {self.k_int}")
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
@@ -238,7 +201,7 @@ class Controller(Node):
                                                 self.pos_changed,
                                                 qos)
         self.state_sub = self.create_subscription(Int32,
-                                                  "/state",
+                                                  f"/state_{self.label}",
                                                   self.state_changed,
                                                   qos)
 
@@ -272,14 +235,25 @@ class Controller(Node):
         with open(self.arucos_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
         self.error_d = [None]*self.n_agents
-        self.log_d = [None]*self.n_agents
         for j in self.in_neighbors:
             self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
             with open(self.error_d[j], 'w') as file:
                 pass  # 'w' mode clears the file's contents
-            self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
-            with open(self.log_d[j], 'w') as file:
-                pass  # 'w' mode clears the file's contents
+
+        if self.enable_log:
+            self.log_d = [None]*self.n_agents
+            for j in self.in_neighbors:
+                self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
+                with open(self.log_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+            if self.k_int != 0.:
+                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+                with open(self.vel_log_d_0, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+                with open(self.vel_log_d_1, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
         if self.k_int != 0.:
             self.error_int_d = [None]*self.n_agents
             for j in self.in_neighbors:
@@ -321,12 +295,82 @@ class Controller(Node):
             self.control = self.control_p
         self.svd = [None]*self.n_agents
 
+        if self.enable_log and self.k_int != 0:
+            self.u_log = [np.zeros(6), np.zeros(6)]
+
         # INIT control loop
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
-    # def __exit__(self):
-    # def __del__(self):
-    #     self.video_writer.release()
+    def proc_paramaters(self):
+
+        self.declare_parameter('frequency', 50.0)
+        self.declare_parameter('robot_name_prefix', 'bebop')
+        self.declare_parameter('takeoff_threshold', 0.04)
+        self.declare_parameter('landing_threshold', 0.08)
+        self.declare_parameter('takeoff_height', 1.0)
+        self.declare_parameter('label', 1)
+        self.declare_parameter('n_agents', 1)
+        self.declare_parameter('reference_image_prefix', "reference_f")
+        self.declare_parameter('output', "output")
+        self.declare_parameter('img_depth', 1.)
+        self.declare_parameter('gain', 1.)
+        self.declare_parameter('gain_int', 0.)
+        self.declare_parameter('gain_w', 1.)
+        self.declare_parameter('gain_takeoff', 1.)
+        self.declare_parameter('K', [1.]*9)
+        self.declare_parameter('L', [0])
+        self.declare_parameter('p0', [1.]*4)
+        self.declare_parameter('polar', False)
+        self.declare_parameter('save_log', False)
+
+        self.frequency = self.get_parameter('frequency').value
+        self.robot_name = self.get_parameter('robot_name_prefix').value.strip()
+        self.takeoff_threshold = self.get_parameter('takeoff_threshold').value
+        self.landing_threshold = self.get_parameter('landing_threshold').value
+        self.takeoff_height = self.get_parameter('takeoff_height').value
+        self.label = self.get_parameter('label').value
+        self.n_agents = self.get_parameter('n_agents').value
+        self.reference_image_prefix = self.get_parameter('reference_image_prefix').value
+        self.output = self.get_parameter('output').value
+        self.img_depth = self.get_parameter('img_depth').value
+        self.gain = self.get_parameter('gain').value
+        self.kw = self.get_parameter('gain_w').value
+        self.k_int = self.get_parameter('gain_int').value
+        self.gain_takeoff = self.get_parameter('gain_takeoff').value
+        self.K = self.get_parameter('K').value
+        self.L = self.get_parameter('L').value
+        self.initial_cond = self.get_parameter('p0').value
+        self.enable_polar = self.get_parameter('polar').value
+        self.enable_log = self.get_parameter('save_log').value
+
+        # Convert parameters to a dictionary
+        param_dict = {
+            "frequency" : self.frequency,
+            "robot_name" : self.robot_name,
+            "takeoff_threshold" : self.takeoff_threshold,
+            "landing_threshold" : self.landing_threshold,
+            "takeoff_height" : self.takeoff_height,
+            "label" : self.label,
+            "n_agents" : self.n_agents,
+            "reference_image_prefix" : self.reference_image_prefix,
+            "output" : self.output,
+            "img_depth" : self.img_depth,
+            "gain" : self.gain,
+            "kw" : self.kw,
+            "k_int" : self.k_int,
+            "gain_takeoff" : self.gain_takeoff,
+            "K" : self.K,
+            "L" : self.L,
+            "initial_cond" : self.initial_cond,
+            "enable_polar" : self.enable_polar,
+            "enable_log" : self.enable_log,
+            }
+
+
+        # Save to YAML file
+        _name = os.path.join(self.output, f"params.yaml")
+        with open(_name, 'w') as yaml_file:
+            yaml.dump(param_dict, yaml_file)
 
     def state_changed(self, msg):
         self.new_state = msg.data
@@ -467,6 +511,19 @@ class Controller(Node):
                 # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
                 binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
                 # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
+                f.write(binary)
+        if self.k_int != 0.:
+            with open(self.vel_log_d_0, 'ab') as f:
+                data = (t,) + tuple(self.u_log[0][[0,1,2,5]].reshape(-1))
+                # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
+                # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
+                binary = struct.pack('ddddd', *data)
+                f.write(binary)
+            with open(self.vel_log_d_1, 'ab') as f:
+                data = (t,) + tuple(self.u_log[1][[0,1,2,5]].reshape(-1))
+                # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
+                # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
+                binary = struct.pack('ddddd', *data)
                 f.write(binary)
 
     def feature_receiver(self, msg):
@@ -621,7 +678,7 @@ class Controller(Node):
                 # print(f"Int err from {j} to {self.label} = {_err.reshape(-1)*dt}")
             else:
                 self.ids_int[j].append(q)
-                self.err_int[j].append(_err)
+                self.err_int[j].append(np.zeros((2,4)))
 
     # def get_mathing_int(self, query, j):
     #
@@ -646,6 +703,9 @@ class Controller(Node):
     #             self.err_int[j] = np.concatenate((self.err_int[j], _err), axis = 1 )
 
     def control_int(self, _image = None):
+
+        if self.enable_log :
+            self.u_log = [np.zeros(6), np.zeros(6)]
         for j in self.in_neighbors:
             if not  self.points[j] is None:
 
@@ -679,8 +739,13 @@ class Controller(Node):
                     self.get_logger().error("Invalid Ls matrix")
                     continue
 
-                _arg = self.error[j].T.reshape(-1) + self.k_int * self._err_int[j].T.reshape(-1)
-                self._u += - self.gain * L_inv @ _arg
+                _arg_1 = self.gain * self.error[j].T.reshape(-1)
+                _arg_2 = self.k_int * self._err_int[j].T.reshape(-1)
+                self._u += -  L_inv @ (_arg_1 +_arg_2)
+
+                if self.enable_log and self.k_int != 0:
+                    self.u_log[0] += - L_inv @ _arg_1
+                    self.u_log[1] += - L_inv @ _arg_2
 
                 if not _image is None:
                     complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
@@ -901,12 +966,12 @@ class Controller(Node):
 
             #   IBFC
             self._u = np.zeros(6)
-            if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
-                _image = self.control_int(_image)
-
-            else:
-                _image = self.control_p(_image)
-            # _image = self.control(_image)
+            # if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
+            #     _image = self.control_int(_image)
+            #
+            # else:
+            #     _image = self.control_p(_image)
+            _image = self.control(_image)
 
             _norm = 0.
             for j in self.in_neighbors:
