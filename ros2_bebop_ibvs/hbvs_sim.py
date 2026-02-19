@@ -30,70 +30,6 @@ def get_yaw(orientation):
 
 
 
-def interaction_matrix_xyz(points,Z):
-
-    n = points.shape[1]
-    L = np.zeros((n,12), dtype= np.float64)
-    L[:,0]  =   L[:,7] = -1/Z
-    L[:,2]  =   points[0,:]/Z
-    L[:,3]  =   points[0,:]*points[1,:]
-    L[:,4]  =   -(1+points[0,:]**2)
-    L[:,5]  =   points[1,:]
-    L[:,8]  =   points[1,:]/Z
-    L[:,9]  =   1+points[1,:]**2
-    L[:,10] =   -points[0,:]*points[1,:]
-    L[:,11] =   -points[0,:]
-
-    return L.reshape((-1,6))
-
-def interaction_matrix_y(points,Z):
-
-    n = points.shape[1]
-    L = np.zeros((n,8))
-    L[:,0]  =   L[:,5] = -1/Z
-    L[:,2]  =   points[0,:]/Z
-    L[:,3]  =  -(1+points[0,:]**2)
-    L[:,6]  =   points[1,:]/Z
-    L[:,7]  =  -points[0,:]*points[1,:]
-
-    return L.reshape((-1,4))
-
-def interaction_matrix_t(points,Z):
-    n = points.shape[1]
-    L = np.zeros((n,6))
-    L[:,0]  =   L[:,4] = -1/Z
-    L[:,2]  =   points[0,:]/Z
-    L[:,5]  =   points[1,:]/Z
-
-
-    return L.reshape((-1,3))
-
-def interaction_matrix_polar(points, Z):
-
-    n = points.shape[1]
-    L = np.zeros((n,12))
-
-    c = np.cos(points[1,:])
-    s = np.sin(points[1,:])
-
-    L[:,0]  =   -c/Z
-    L[:,1]  =   -s/Z
-    L[:,2]  =   points[0,:]/Z
-    L[:,3]  =   (1+points[0,:]**2)*s
-    L[:,4]  =   -(1+points[0,:]**2)*c
-    L[:,6]  =   s/(points[0,:]*Z)
-    L[:,7]  =   -c/(points[0,:]*Z)
-    L[:,9] =    c/points[0,:]
-    L[:,10] =   s/points[0,:]
-    L[:,11] =   -1.
-
-    return L.reshape((-1,6))
-
-def Inv_Moore_Penrose(L):
-    A = L.T@L
-    if np.linalg.det(A) == 0:
-        return None
-    return np.linalg.inv(A) @ L.T
 
 class Controller(Node):
 
@@ -545,7 +481,6 @@ class Controller(Node):
             _w = self.R_cam @ self._u[3:]
             _v = (self.R_cam @ self._u[:3]).reshape(-1)
             _v += np.cross( self.t_cam , _w.reshape(-1) )
-            _w *= self.kw
             self.u[:3] = _v.copy()
             self.u[3:] = _w.reshape(-1)
             #   4DOF
@@ -571,17 +506,6 @@ class Controller(Node):
             # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
             self.cmd_pub.publish(self.m_vel)
 
-            #   BEGIN
-            # self.m_vel = Twist()
-            # # self.m_vel.linear.x = float(.1)
-            # # self.m_vel.linear.x = float(self.u[0])
-            # # self.m_vel.linear.y = float(-.1)
-            # # self.m_vel.linear.y = float(self.u[1])
-            # self.m_vel.linear.z = float(self.u[2])
-            # # self.m_vel.angular.z = float(self.u[5])
-            # self.cmd_pub.publish(self.m_vel)
-
-            #   END
 
             #   Save data
             self.save_data()

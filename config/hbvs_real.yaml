@@ -1,0 +1,13 @@
+K:   [537.292878, 0.000000, 427.331854,
+      0.000000, 527.000348, 240.226888,
+      0.000000, 0.000000, 1.000000]
+# 3x3 matrix [from: bebop_calibrate]
+# K:   [532.639,  0.   ,433.886,
+#       0.     ,523.695,230.153,
+#       0.     ,  0.   ,  1.   ]
+frequency: 30.
+robot_name: "bebop"
+gains: [.2, .2, .7, .06]
+
+time: 6. #   waiting time
+output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
