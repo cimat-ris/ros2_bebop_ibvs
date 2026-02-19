@@ -7,7 +7,7 @@ K:   [537.292878, 0.000000, 427.331854,
 #       0.     ,  0.   ,  1.   ]
 frequency: 30.
 robot_name: "bebop"
-gains: [.2, .2, .7, .06]
+gains: [.3, .3, .8, .1]
 
 time: 6. #   waiting time
-output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
+output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output/hbvs_real_03

@@ -56,7 +56,7 @@ def generate_launch_description():
     )
 
 
-    #   IBVS
+    #   HBVS
     yaml_control = os.path.join(pkg_bebop_hbvs, 'config', 'hbvs_sim.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)

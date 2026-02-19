@@ -237,10 +237,10 @@ def plotVel(directory, data):
 
 
     #  plot Velocities
-    labels = ["X","Y","Z","Yaw"]
+    labels = ["Yaw","X","Y","Z"]
     fig_v, ax_v = plt.subplots(nrows = 1, figsize=(5,5))
     fig_v.suptitle("Velocities")
-    symbols = plot_time(ax_v, time, velocities, color_offset = 1)
+    symbols = plot_time(ax_v, time, velocities[[3,0,1,2],:], color_offset = 1)
     ax_v.legend(symbols,labels, loc=1)
     ax_v.set_ylim([-.25,.25])
     # plt.show()
@@ -269,8 +269,11 @@ def plotError(directory,error):
 
     fig, ax = plt.subplots( figsize=(5,5))
     fig.suptitle("Error")
-    plot_time(ax, error["t"].reshape(-1), error["v"], color_offset = 1)
-    ax.set_ylim([-.25,.25])
+    symbols = plot_time(ax, error["t"].reshape(-1), error["v"], color_offset = 1)
+    # ax.set_ylim([-.25,.25])
+    ax.set_ylim([-5.,5.])
+    labels = ["X","Y","Z","Hx", "Hy", "Hz"]
+    fig.legend(symbols,labels, loc=1)
     name = os.path.join(directory ,"Error_runtime.pdf")
     plt.savefig(name ,bbox_inches='tight')
     plt.close()

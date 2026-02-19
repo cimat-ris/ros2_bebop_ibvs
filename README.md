@@ -131,11 +131,12 @@ export GZ_VERSION=jetty
 
 
 
-# Simulation or a single agent IBVS
+# Simulation or a single agent Visual Servo
 
 ```bash
 # screen 1
-ros2 launch ros2_bebop_ibvs bebop1_sim.launch.py
+ros2 launch ros2_bebop_ibvs bebop1_ibvs_sim.launch.py
+ros2 launch ros2_bebop_ibvs bebop1_hbvs_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
@@ -181,7 +182,7 @@ alias init="ros2 topic pub --once /state std_msgs/Int32 \"{data: 5}\" " #  INITA
 ```
 
 
-#   IBVS with real Bebop
+#   Visual servos with real Bebop
 
 
 ```bash
@@ -197,7 +198,8 @@ ros2 topic pub --once bebop/land std_msgs/Empty
 ros2 run rqt_image_view rqt_image_view
 
 #   Screen 4
-ros2 launch ros2_bebop_ibvs bebop1_real.launch.py
+ros2 launch ros2_bebop_ibvs bebop1_ibvs_real.launch.py
+ros2 launch ros2_bebop_ibvs bebop1_hbvs_real.launch.py
 
 #   Screen 5
 ros2 topic pub --once /stop std_msgs/Empty

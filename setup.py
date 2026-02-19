@@ -30,8 +30,9 @@ setup(
     entry_points={
         'console_scripts': [
             "ibvs_sim = ros2_bebop_ibvs.ibvs_sim:main",
-            "hbvs_sim = ros2_bebop_ibvs.hbvs_sim:main",
             "ibvs_real = ros2_bebop_ibvs.ibvs_real:main",
+            "hbvs_sim = ros2_bebop_ibvs.hbvs_sim:main",
+            "hbvs_real = ros2_bebop_ibvs.hbvs_real:main",
             "ibfc_sim = ros2_bebop_ibvs.ibfc_sim:main",
             "sim_control = ros2_bebop_ibvs.sim_control:main",
         ],
