@@ -113,6 +113,8 @@ class Controller(Node):
         self.declare_parameter('gain_w', 1.)
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
+        self.declare_parameter('CamR', [1.]*9)
+        self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
@@ -129,6 +131,8 @@ class Controller(Node):
         self.kw = self.get_parameter('gain_w').value
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
+        self.camR = self.get_parameter('CamR').value
+        self.camT = self.get_parameter('CamT').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
@@ -138,6 +142,8 @@ class Controller(Node):
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
+        self.Rcam = np.array(self.camR).reshape((3,3))
+        self.t_cam = np.array(self.camT)
         print(self.K)
 
         if not self.robot_name:
@@ -165,10 +171,10 @@ class Controller(Node):
         self.points = None
 
         #   Camera and robot transformations
-        self.R_cam = np.array([[0.,  0., 1.],
-                               [-1., 0., 0.],
-                               [0., -1., 0.]])
-        self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
+        # self.R_cam = np.array([[0.,  0., 1.],
+        #                        [-1., 0., 0.],
+        #                        [0., -1., 0.]])
+        # self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
 
         #   Publishers
         qos = QoSProfile(depth=2)

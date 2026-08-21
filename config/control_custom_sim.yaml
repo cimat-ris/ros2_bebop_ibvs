@@ -1,10 +1,10 @@
 K:   [375.98849,  0.   ,428.,
       0.     ,375.98849,240.,
       0.     ,  0.   ,  1.   ]
-CamR: [0., 0., 1.,
+CamR: [0.,-1., 0.,
       -1., 0., 0.,
-       0.,-1., 0.]
-CamT: [0.12, 0., 0.]
+       0., 0.,-1.]
+CamT: [0., 0., -0.05]
 
 # p0: [0., 0.,1., 1.5708] #   reference 1 aruco
 # p0: [0., 0.,1., 1.5708] #   reference 4_2 aruco
@@ -42,4 +42,4 @@ gain_w: 1.
 img_depth: 4.
 
 save_log: true
-output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
+output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
