@@ -61,7 +61,7 @@ def generate_launch_description():
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
     # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_4_2.png')
-    config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_2_flat.png')
+    config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'ground_reference.png')
     # config["ref_image"] = os.path.join(pkg_bebop_ibvs, 'config', 'reference_1_aruco.png')
     if not os.path.exists(config["ref_image"]):
         print(f"Camara reference {config["ref_image"]} does not exists")
@@ -70,7 +70,7 @@ def generate_launch_description():
     if not os.path.exists(config["output"]):
         print(f"Output directory  {config["output"]} does not exists")
         return
-
+    print(config)
     controller = Node(
             package='ros2_bebop_ibvs',
             executable='ibvs_sim',

@@ -6,29 +6,8 @@ CamR: [0.,-1., 0.,
        0., 0.,-1.]
 CamT: [0., 0., -0.05]
 
-# p0: [0., 0.,1., 1.5708] #   reference 1 aruco
-# p0: [0., 0.,1., 1.5708] #   reference 4_2 aruco
-# p0: [0., 0.,1., 1.5708] #   reference 2 aruco
-# p0: [1., 0.,1., 1.5708] #   reference 2_2 aruco
-# p0: [1., 0.,1., 1.5708] #   reference 2_flat aruco
-# p0: [0., 0.,1., 1.2708] #   reference + yaw_glob
-# p0: [0., -1.,1., 1.5708] #   ony z_cam
-# p0: [0., -1.,1., 1.2708] #   z_cam + yaw_glob
-# p0: [1., -1.,2., 1.5708] #   t_all
-# p0: [1., -1.,2., 1.2708] #   all
-# p0: [3., -1.,2., 1.8708] #   all2
-# p0: [0., -1.,2., 1.8708] #   all3
-# p0: [1., -2.,3., 1.1708] #   all4
-# p0: [1, -2.,2.5, 1.9708] #   all5
-# p0: [0, -2.,2.5, 1.9708] #   all6
-# p0: [2., -2.,2.5, 1.9708] #   all7
+p0: [0., 0., 3., 0] #   ground_reference.png
 
-# p0: [0., -1.,2., 1.1708] #   reference 2_2 all1 (8)
-p0: [2., -1.,2., 1.9708] #   reference 2_2 all2 (9)
-
-# p0: [-1., 0.,1., 1.5708] #   ony y_robot
-# p0: [0., 0.,2., 1.5708] #   ony z_robot
-# p0: [-1., -1.,1., 1.] #   Compare
 frequency: 30.
 robot_name: "parrot_bebop_2"
 takeoff_threshold: 0.05
@@ -36,10 +15,37 @@ landing_threshold: 0.03
 hover_height: 1.5
 gain_takeoff: .5
 
+#   Image proc
+matcher: [  nfeatures,
+            scaleFactor,
+            nlevels,
+            edgeThreshold,
+            patchSize,
+            fastThreshold,
+            flann_ratio]
+matcher_vals: [ 30,
+                1.2,
+                8,
+                15,
+                30,
+                20,
+                0.7]
+
+# aruco:
+#     dictionary: 6X6_250
+#     # dictionary: APRILTAG_36h11
+#     adaptiveThreshWinSizeMin: 141
+#     adaptiveThreshWinSizeMax: 251
+#     adaptiveThreshWinSizeStep: 20
+#     adaptiveThreshConstant: 4
+#     perspectiveRemovePixelPerCell: 10
+#     perspectiveRemoveIgnoredMarginPerCell: 0.2
+
+#   Contol
 polar: false
 gain: .2
 gain_w: 1.
 img_depth: 4.
 
-save_log: true
+save_log: false
 output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output

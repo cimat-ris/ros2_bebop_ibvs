@@ -115,6 +115,10 @@ class Controller(Node):
         self.declare_parameter('K', [1.]*9)
         self.declare_parameter('CamR', [1.]*9)
         self.declare_parameter('CamT', [1.]*9)
+        self.declare_parameter('matcher', ["NAN"])
+        self.declare_parameter('matcher_vals', [0.])
+        self.declare_parameter('aruco', ["NAN"])
+        self.declare_parameter('aruco_vals', [0])
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
@@ -133,10 +137,24 @@ class Controller(Node):
         self.K = self.get_parameter('K').value
         self.camR = self.get_parameter('CamR').value
         self.camT = self.get_parameter('CamT').value
+        matcher = self.get_parameter('matcher').value
+        matcher_vals = self.get_parameter('matcher_vals').value
+        aruco = self.get_parameter('aruco').value
+        aruco_vals = self.get_parameter('aruco_vals').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
         # self.initial_cond = np.array(self.initial_cond)
+
+        # if self.has_parameter("matcher"):
+        #     self.matcher = self.get_parameter('matcher').value
+        # else:
+        #     self.matcher = {}
+        # if self.has_parameter("aruco"):
+        #     self.aruco = self.get_parameter('aruco').value
+        # else:
+        #     self.aruco = {}
+
 
         #   Camera calibration data
         self.f = [self.K[0], self.K[4]]
@@ -144,7 +162,6 @@ class Controller(Node):
         self.K = np.array(self.K).reshape((3,3))
         self.Rcam = np.array(self.camR).reshape((3,3))
         self.t_cam = np.array(self.camT)
-        print(self.K)
 
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
@@ -154,27 +171,61 @@ class Controller(Node):
         #   Reference image
         image_ref = cv2.imread(self.ref_image)
         if  image_ref is None :
-            self.get_logger.error(f"Image {self.ref_image} could not be read ")
+            self.get_logger().error(f"Image {self.ref_image} could not be read ")
             return
-        gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
-        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
-        parameters = cv2.aruco.DetectorParameters()
-        self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
-        self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
-        if self.ids_ref is None:
-            self.get_logger.error(f"No detected Markers")
-            return
-        self._ids_ref = self.ids_ref.tolist()
-        cv2.aruco.drawDetectedMarkers(image_ref, self.corners_ref, self.ids_ref,
-                                        borderColor = (100,1.,0.) )
-        cv2.imwrite("reference_proc.png", image_ref)
-        self.points = None
 
-        #   Camera and robot transformations
-        # self.R_cam = np.array([[0.,  0., 1.],
-        #                        [-1., 0., 0.],
-        #                        [0., -1., 0.]])
-        # self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
+        if aruco[0] == "NAN" :
+            self.aruco = {}
+        else:
+            self.aruco = {i:j for i, j in zip(aruco,aruco_vals)}
+        if matcher[0] == "NAN" :
+            self.matcher = {}
+        else:
+            self.matcher = {i:j for i, j in zip(matcher,matcher_vals)}
+
+
+        if len(self.aruco) > 1 :
+            # TODO adapt to yaml config
+            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+            aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
+            parameters = cv2.aruco.DetectorParameters()
+            self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+            self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
+            if self.ids_ref is None:
+                self.get_logger().error(f"No detected Markers")
+                return
+            self._ids_ref = self.ids_ref.tolist()
+            cv2.aruco.drawDetectedMarkers(image_ref,
+                                          self.corners_ref,
+                                          self.ids_ref,
+                                           borderColor = (100,1.,0.) )
+            cv2.imwrite("reference_proc.png", image_ref)
+
+        elif len(self.matcher) > 1 :
+            #   Reference
+            self.orb = cv2.ORB_create(
+                nfeatures    = int( self.matcher["nfeatures"] ),
+                scaleFactor  = self.matcher["scaleFactor"],
+                nlevels      = int( self.matcher["nlevels"] ),
+                edgeThreshold= int( self.matcher["edgeThreshold"] ),
+                patchSize    = int( self.matcher["patchSize"] ),
+                fastThreshold= int( self.matcher["fastThreshold"] )
+                )
+            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(image_ref, None)
+            if self.desc_ref is None:
+                self.get_logger().error(f"No detected Features")
+                return
+
+            #   Matcher
+            index_params = {
+                "algorithm": 6,
+                "table_number": 20,
+                "key_size": 10,
+                "multi_probe_level": 2,
+            }
+
+            self.flann = cv2.FlannBasedMatcher(index_params)
+            self.image_ref = image_ref
 
         #   Publishers
         qos = QoSProfile(depth=2)
@@ -188,10 +239,16 @@ class Controller(Node):
         #   Image bridge
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
-        self.image_subscription = self.create_subscription(
-            Image, f"/{self.robot_name}/image",
-            self.image_recv,
-            img_qos)
+        if len(self.aruco) > 1 :
+            self.image_subscription = self.create_subscription(
+                Image, f"/{self.robot_name}/image",
+                self.image_recv,
+                img_qos)
+        elif len(self.matcher) > 1 :
+            self.image_subscription = self.create_subscription(
+                Image, f"/{self.robot_name}/image",
+                self.image_recv_matcher,
+                img_qos)
         self.image_pub = self.create_publisher(Image,
                                                f"/{self.robot_name}/matching",
                                                img_qos)
@@ -235,6 +292,9 @@ class Controller(Node):
         self.data2save = False
         self.enable = False
         self.found_arucos_w = False
+        self.lost_features = False
+        self.points = None
+        self.points_ref = None
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
         self.m_vel = Twist()
 
@@ -257,7 +317,86 @@ class Controller(Node):
         _p[1,:] /= self.f[1]
         return _p
 
-    def image_recv(self, msg):
+    def image_recv_matcher(self, msg):
+
+        # self.get_logger().info("Image received")
+        # print("PING")
+        try:
+            self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except CvBridgeError as e:
+            self.get_logger().error(f"Error converting image: {e}")
+        except KeyError as e:
+            self.get_logger().error(f"Robot name not found in topic: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Unexpected error: {e}")
+
+        # Extract ArUcos
+        gray_image = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
+        kp, desc = self.orb.detectAndCompute(gray_image, None)
+        knn_matches = self.flann.knnMatch(desc, self.desc_ref, k=2)
+
+        # Lowe ratio test
+        good_matches = []
+        for matches in knn_matches:
+            if len(matches) == 2:
+                m, n = matches
+                if m.distance < self.matcher["flann_ratio"] * n.distance:
+                    good_matches.append(m)
+
+        # print(good_matches)
+
+        if len(good_matches) < 3 :
+            if not self.lost_features:
+                self.get_logger().warning("No Matches available")
+                self.lost_features = True
+            self.points = None
+            self.points_ref = None
+            return
+        if self.lost_features:
+            self.get_logger().warning("Matches available")
+            self.found_arucos_w = False
+
+        # Matching coordinates as NumPy arrays
+        self.p = np.float32([
+            kp[m.queryIdx].pt
+            for m in good_matches
+        ])
+
+        _p_ref = np.float32([
+            self.kp_ref[m.trainIdx].pt
+            for m in good_matches
+        ])
+
+        # TODO: revisar shape
+
+        #   Normalize
+        self.points = self.normalize(self.p.astype(float).T)
+        self.points_ref = self.normalize(_p_ref.astype(float).T)
+
+        if self.enable_polar:
+            _r = np.linalg.norm(self.points, axis = 0)
+            _t = np.arctan2(self.points[1,:], self.points[0,:])
+            self.points = np.c_[_r, _t].T
+            _r = np.linalg.norm(self.points_ref, axis = 0)
+            _t = np.arctan2(self.points_ref[1,:], self.points_ref[0,:])
+            self.points_ref = np.c_[_r, _t].T
+
+
+        #   Publish detection
+        match_image = cv2.drawMatches(
+            self.cv_image,
+            kp,
+            self.image_ref,
+            self.kp_ref,
+            good_matches,
+            None,
+            flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+        )
+
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
+
+
+    def image_recv_aruco(self, msg):
 
         # self.get_logger().info("Image received")
 
