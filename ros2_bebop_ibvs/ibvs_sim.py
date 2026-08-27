@@ -160,7 +160,7 @@ class Controller(Node):
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
-        self.Rcam = np.array(self.camR).reshape((3,3))
+        self.R_cam = np.array(self.camR).reshape((3,3))
         self.t_cam = np.array(self.camT)
 
         if not self.robot_name:
@@ -273,15 +273,26 @@ class Controller(Node):
         self.norm_e_d = os.path.join(self.output, "norm_error.dat")
         with open(self.norm_e_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.arucos_d = os.path.join(self.output, "arUcos.dat")
-        with open(self.arucos_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
         self.error_d = os.path.join(self.output, "error.dat")
         with open(self.error_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        self.log_d = os.path.join(self.output, "log.dat")
-        with open(self.log_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
+
+        #   With Arucos
+        if len(self.aruco) > 1 :
+            self.save_select = self.save_arucos
+            self.arucos_d = os.path.join(self.output, "arUcos.dat")
+            with open(self.arucos_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        elif len(self.matcher) > 1 :
+            self.save_select = self.save_features
+            self.arucos_d = os.path.join(self.output, "features.dat")
+            with open(self.arucos_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+
+        if self.enable_log:
+            self.log_d = os.path.join(self.output, "log.dat")
+            with open(self.log_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
 
         #   State
         self.state = IDLE
@@ -354,7 +365,7 @@ class Controller(Node):
             return
         if self.lost_features:
             self.get_logger().warning("Matches available")
-            self.found_arucos_w = False
+            self.lost_features = False
 
         # Matching coordinates as NumPy arrays
         self.p = np.float32([
@@ -367,11 +378,14 @@ class Controller(Node):
             for m in good_matches
         ])
 
-        # TODO: revisar shape
+
+        # print(self.p)
+        # print(_p_ref)
 
         #   Normalize
         self.points = self.normalize(self.p.astype(float).T)
         self.points_ref = self.normalize(_p_ref.astype(float).T)
+        self.good_matches = good_matches
 
         if self.enable_polar:
             _r = np.linalg.norm(self.points, axis = 0)
@@ -466,6 +480,45 @@ class Controller(Node):
 
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
 
+
+    def save_arucos(self,t ):
+
+
+        with open(self.arucos_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+        with open(self.error_d, 'ab') as f:
+            for i in range(len(self.ids)):
+
+                data = (t, self.ids[i])
+                data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+    def save_features(self,t ):
+
+        if self.points is None:
+            return
+
+        with open(self.arucos_d, 'ab') as f:
+            for i, m in enumerate (self.good_matches):
+                data = (t,m.trainIdx)
+                data += tuple(self.p[i, :].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
+        with open(self.error_d, 'ab') as f:
+            for i, m in enumerate (self.good_matches):
+                data = (t,m.trainIdx)
+                data += tuple(self.error[:, i].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
     def save_data(self):
 
         t = self.get_clock().now().nanoseconds * 1e-9
@@ -486,27 +539,13 @@ class Controller(Node):
             binary = struct.pack('ddddd', *data)
             f.write(binary)
 
-
         with open(self.norm_e_d, 'ab') as f:
             data = (t,np.linalg.norm(self.error))
             binary = struct.pack('dd', *data)
             f.write(binary)
 
-        with open(self.arucos_d, 'ab') as f:
-            for i in range(len(self.ids)):
-
-                data = (t, self.ids[i])
-                data += tuple(self.p[4*i:4*(i+1), :].reshape(-1))
-                binary = struct.pack('didddddddd', *data)
-                f.write(binary)
-
-        with open(self.error_d, 'ab') as f:
-            for i in range(len(self.ids)):
-
-                data = (t, self.ids[i])
-                data += tuple(self.error[:,4*i:4*(i+1)].T.reshape(-1))
-                binary = struct.pack('didddddddd', *data)
-                f.write(binary)
+        #   Save image related data
+        self.save_select(t)
 
         # save log
         if not self.enable_log:

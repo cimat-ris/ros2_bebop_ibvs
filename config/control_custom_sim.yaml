@@ -5,6 +5,7 @@ CamR: [0.,-1., 0.,
       -1., 0., 0.,
        0., 0.,-1.]
 CamT: [0., 0., -0.05]
+# CamT: [0., 0., 0.]
 
 p0: [0., 0., 3., 0] #   ground_reference.png
 
@@ -43,8 +44,8 @@ matcher_vals: [ 30,
 
 #   Contol
 polar: false
-gain: .2
-gain_w: 1.
+gain: .02
+gain_w: 0.1
 img_depth: 4.
 
 save_log: false
