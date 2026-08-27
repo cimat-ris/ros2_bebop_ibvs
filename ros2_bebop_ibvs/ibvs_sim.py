@@ -58,6 +58,16 @@ def interaction_matrix_y(points,Z):
 
     return L.reshape((-1,4))
 
+def interaction_matrix_z(points,Z):
+    n = points.shape[1]
+    L = np.zeros((n,8))
+    L[:,0]  =   L[:,5] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =   points[1,:]
+    L[:,6]  =   points[1,:]/Z
+    L[:,7] =   -points[0,:]
+    return L.reshape((-1,4))
+
 def interaction_matrix_t(points,Z):
     n = points.shape[1]
     L = np.zeros((n,6))
@@ -727,6 +737,7 @@ class Controller(Node):
             else:
                 self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
                 # self.L = interaction_matrix_y(self.points, self.img_depth)
+                # self.L = interaction_matrix_z(self.points, self.img_depth)
                 # self.L = interaction_matrix_t(self.points_ref, self.img_depth)
             # self.get_logger().info( f"L: : {self.L}")
             L_inv = Inv_Moore_Penrose(self.L)
@@ -740,6 +751,7 @@ class Controller(Node):
 
             # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
             self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
+            self._u *= 2./self.error.shape[1]
 
 
             # if abs(self.u[1].T) > 0.05 :
@@ -758,7 +770,8 @@ class Controller(Node):
             self.u[:3] = _v.copy()
             self.u[3:] = _w.reshape(-1)
             #   4DOF
-            # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+            # print(self._u)
+            # _w = self.R_cam @ np.array([0.,0.,self._u[3,0]])
             # _v = (self.R_cam @ self._u[:3]).reshape(-1)
             # _v += np.cross( self.t_cam , _w.reshape(-1) )
             # _w *= self.kw
