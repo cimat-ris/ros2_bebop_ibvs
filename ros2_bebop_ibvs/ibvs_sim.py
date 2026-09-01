@@ -129,6 +129,33 @@ def Inv_Moore_Penrose(L):
         return None
     return np.linalg.inv(A) @ L.T
 
+def custom_draw_matching(image1, image2, points1, points2,
+                         color1=(0, 0, 255), color2=(0, 255, 0),
+                         point_radius=3, line_thickness = 1):
+
+    _shape = list(image1.shape)
+    W = _shape[1]
+    _shape[1] *= 2
+    _shape = tuple(_shape)
+    output_image = np.zeros(_shape, dtype = image1.dtype)
+    output_image[:,:W,:] = image1.copy()
+    output_image[:,W:,:] = image2.copy()
+
+    # Draw points from the first array
+    _points2 = points2.copy()
+    _points2 += np.array([W,0.])
+    # print(points1.shape)
+    # for p1, p2 in zip(points1, points2):
+    for i in range(points1.shape[0]):
+        # Draw the line
+        cv2.line(output_image, points1[i,:].astype(int), _points2[i,:].astype(int), color1, line_thickness)
+
+        # Draw points
+        cv2.circle(output_image, points1[i,:].astype(int), point_radius, color1, -1)
+        cv2.circle(output_image, _points2[i,:].astype(int), point_radius, color2, -1)
+
+    return output_image
+
 class Controller(Node):
 
     def __init__(self):
@@ -486,7 +513,7 @@ class Controller(Node):
 
             # print(good_matches)
 
-            if len(good_matches) < 3 :
+            if len(good_matches) <= 2 :
                 if not self.lost_features:
                     self.get_logger().warning("No Matches available")
                     self.lost_features = True
@@ -533,17 +560,13 @@ class Controller(Node):
 
         #   Publish detection
         # TODO
-        # match_image = cv2.drawMatches(
-        #     self.cv_image,
-        #     kp,
-        #     self.image_ref,
-        #     self.kp_ref,
-        #     good_matches,
-        #     None,
-        #     flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
-        # )
-        #
-        # self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
+        match_image = custom_draw_matching(
+            self.cv_image,
+            self.image_ref,
+            self.p,
+            _p_ref)
+
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
 
     def image_recv_matcher(self, msg):
 
@@ -738,7 +761,7 @@ class Controller(Node):
 
     def save_tracking(self,t ):
 
-        if self.p.shape[0] <= self.match_threshold:
+        if self.p.shape[0] < 3:
             return
 
         with open(self.features_d, 'ab') as f:

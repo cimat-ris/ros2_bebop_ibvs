@@ -48,14 +48,12 @@ def get_reference(image_name,
 
 def plot_descriptors_simple(ax,
                             descriptors_array,
-                            s_ref,
                             camera_iMsize,
                             enableLims = True):
 
     n = descriptors_array.shape[0]/2
     n = int(n)
 
-    # source_path = Path(__file__).resolve()
     source_dir = os.path.dirname(__file__)
 
     npzfile = np.load(source_dir +"/general.npz")
@@ -77,8 +75,6 @@ def plot_descriptors_simple(ax,
         ax.plot(descriptors_array[2*i,:],descriptors_array[2*i+1,:],
                 color=colors[i%nColors], lw = 0.5)
     for i in range(n):
-        ax.plot(s_ref[i*2],s_ref[i*2+1],
-                marker='^',color=colors[i%nColors], mec = 'k')
         ax.plot(descriptors_array[2*i,0],descriptors_array[2*i+1,0],
                 '*',color=colors[i%nColors], mec = 'k')
         ax.plot(descriptors_array[2*i,-1],descriptors_array[2*i+1,-1],
@@ -239,7 +235,7 @@ def plotNErr(directory, data):
     plot_time(ax_e, time,error.reshape((1,-1)) )
 
     print("Minimun error= "+ str(error.min()))
-    name = os.path.join(directory ,"Error.pdf")
+    name = os.path.join(directory ,"Error_Norm.pdf")
     plt.savefig(name,bbox_inches='tight')
     plt.close()
 
@@ -250,45 +246,29 @@ def plotError(directory,error):
     for i, v in error.items():
         time = np.array(v["t"])
         error = np.array(v["v"]).copy()
-        error = error.reshape((8,-1))
+        error = error.reshape((2,-1))
         plot_time(ax, time,error )
     # ax.set_ylim([-.5,.5])
-    name = os.path.join(directory ,"Error_runtime.pdf")
+    name = os.path.join(directory ,"Error.pdf")
     plt.savefig(name ,bbox_inches='tight')
     plt.close()
 
 
-def plotArucos(directory, arucos, reference):
-
-    #   Plot error
-    fig_e, ax_e = plt.subplots( figsize=(6,2))
-    fig_e.suptitle("Error")
-    for i, v in arucos.items():
-        if i in reference[0]:
-            k = reference[0].index(i)
-            time = np.array(v["t"])
-            error = np.array(v["v"]).copy()
-            error = error.reshape((8,-1))
-            s_ref = reference[1][k].reshape((8,-1))
-            error = error - s_ref
-            plot_time(ax_e, time,error )
-    name = os.path.join(directory ,"Error_arucos.pdf")
-    plt.savefig(name,bbox_inches='tight')
-    plt.close()
+def plotFeat(directory, features): #, reference):
 
     camera_iMsize = [856,480]
     fig, ax = plt.subplots()
-    fig.suptitle("ArUcos")
-    for i, v in arucos.items():
-        if i in reference[0]:
-            k = reference[0].index(i)
-            points = np.array(v["v"]).reshape((8,-1))
-            s_ref = reference[1][k].reshape(8)
-            symbols = plot_descriptors_simple(ax,
-                                points,
-                                s_ref,
-                            camera_iMsize,
-                            enableLims = True)
+    fig.suptitle("Features")
+    for i, v in features.items():
+        # if i in reference[0]:
+        #     k = reference[0].index(i)
+            # s_ref = reference[1][k].reshape(8)
+        points = np.array(v["v"]).reshape((2,-1))
+        symbols = plot_descriptors_simple(ax,
+                            points,
+                            # s_ref,
+                        camera_iMsize,
+                        enableLims = True)
     labels = ["Start","End","Reference","trayectory"]
     symbols = [mlines.Line2D([0],[0],marker='*',color='k'),
                mlines.Line2D([0],[0],marker='o',color='k'),
@@ -297,7 +277,7 @@ def plotArucos(directory, arucos, reference):
     fig.legend(symbols,labels, loc=1)
     plt.gca().invert_yaxis()
     plt.tight_layout()
-    name = os.path.join(directory ,"ArUcos.pdf")
+    name = os.path.join(directory ,"Features.pdf")
     plt.savefig(name,bbox_inches='tight')
     #plt.show()
     plt.close()
@@ -467,6 +447,45 @@ def read_data(directory):
 
     name = os.path.join(directory ,"features.dat")
     features = None
+    if os.path.exists(name):
+        length = os.path.getsize(name)
+        if length > 0:
+            with open(name, 'rb') as fileH:
+                size = 3*d + 8
+                rows = length / size
+                rows = int(np.floor(rows))
+
+                features = {}
+
+                for i in range (rows-1):
+                    time = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 1)
+                    time = time[0]
+                    idx = np.fromfile(fileH,
+                                        dtype = np.int64,
+                                        count = 1)
+                    idx = idx[0]
+                    _feat = np.fromfile(fileH,
+                                        dtype = np.float64,
+                                        count = 2)
+                    # print(time)
+                    # print(idx)
+                    # print(_feat)
+
+                    if idx in features:
+                        features[idx]["t"].append(time)
+                        features[idx]["v"] = np.concatenate([features[idx]["v"],_feat])
+                    else:
+                        _d = {"t":[time], "v":_feat}
+                        features[idx] = _d
+
+                t0 = [ features[key]["t"][0] for  key in features]
+                t0 = min(t0)
+                for i in features:
+                    features[i]["v"] = features[i]["v"].reshape((-1,2))
+                    features[i]["v"] = features[i]["v"].T
+                    features[i]["t"] = [t - t0 for t in features[i]["t"]]
 
     name = os.path.join(directory ,"error.dat")
     error = None
@@ -474,7 +493,7 @@ def read_data(directory):
         length = os.path.getsize(name)
         if length > 0:
             with open(name, 'rb') as fileH:
-                size = 9*d + 8
+                size = 3*d + 8
                 rows = (length) / size
                 rows = int(np.floor(rows))
 
@@ -491,7 +510,7 @@ def read_data(directory):
                     idx = idx[0]
                     _error = np.fromfile(fileH,
                                         dtype = np.float64,
-                                        count = 8)
+                                        count = 2)
                     if (any(_error > 10)):
                         print(_error)
                     if idx in error:
@@ -504,7 +523,7 @@ def read_data(directory):
                 t0 = [ error[key]["t"][0] for  key in error]
                 t0 = min(t0)
                 for i in error:
-                    error[i]["v"] = error[i]["v"].reshape((-1,8))
+                    error[i]["v"] = error[i]["v"].reshape((-1,2))
                     error[i]["v"] = error[i]["v"].T
                     error[i]["t"] = [t - t0 for t in error[i]["t"]]
 
@@ -544,22 +563,18 @@ def main(arg):
     #   TODO: revisar tamaño del archivo
     position, velocities, n_e, features, error, log = read_data(directory)
 
-    # s_ref = get_reference(arg.reference,
-    #                       markers = markers,
-    #                       out_directory = directory )
-    # print(s_ref)
     if not n_e is None:
         print("Ploting  ")
         plotNErr(directory, n_e)
     if not velocities is None:
         print("Ploting VELOCITIES ")
         plotVel(directory, velocities)
-    # if not features is None:
-    #     print("Ploting ArUcos")
-    #     plotArucos(directory,  features, s_ref)
-    # if not error is None:
-    #     print("Ploting Error")
-    #     plotError(directory, error)
+    if not features is None:
+        print("Ploting Features")
+        plotFeat(directory,  features) #, s_ref)
+    if not error is None:
+        print("Ploting Error")
+        plotError(directory, error)
     if not position is None:
         print("Ploting 3D")
         plot3D(directory, position, pd )
@@ -576,9 +591,6 @@ if __name__ ==  "__main__":
                                      description = description)
     parser.add_argument( 'directory', type=str, default = 'output',
         help = "Directory name (default output/)")
-    parser.add_argument( '--reference', type=str,
-        default = 'config/ground_reference.png',
-        help = "IBVS reference image (default config/reference.png)")
     parser.add_argument( '--pose', type=float, default = [0., 0., 3., 0.] ,
         nargs = 4,
         help = "Reference pose [x, y, z, yaw (degs)] default [0., 0., 3., 0]")

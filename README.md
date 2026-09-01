@@ -30,13 +30,14 @@ sudo dpkg -i /tmp/ros2-apt-source.deb
 sudo apt update
 
 sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture)] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2-latest.list'
- curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
+curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
 sudo apt update
 sudo apt upgrade
 
-sudo apt install ros-dev-tools
 sudo apt-get install ros-rolling-ros-base
-sudo apt-get install ros-rolling-ros-gz
+sudo apt install ros-dev-tools
+# sudo apt-get install ros-rolling-ros-gz
+sudo apt-get install ros-rolling-rqt-image-view
 ```
 
 
@@ -134,9 +135,10 @@ export GZ_VERSION=jetty
 # Simulation or a single agent Visual Servo
 
 ```bash
-# screen 1
-ros2 launch ros2_bebop_ibvs bebop1_ibvs_sim.launch.py
-ros2 launch ros2_bebop_ibvs bebop1_hbvs_sim.launch.py
+# screen 1 (choose one)
+ros2 launch ros2_bebop_ibvs bebop1_ibvs_sim.launch.py   # bebop simple
+ros2 launch ros2_bebop_ibvs bebop1_hbvs_sim.launch.py   # bebop ibvs
+ros2 launch ros2_bebop_ibvs bebop1_ground_sim.launch.py # ground view ibvs
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
@@ -228,7 +230,7 @@ ps | grep dragon
 ```
 
 
-#   Plot data
+#   Plot Aruco-data
 
 The following utility plots:
 + State evolution
@@ -264,5 +266,37 @@ options:
                         Reference pose [x, y, z, yaw (degs)] default [1., 0., 1., 90]
   --markers {4X4_50,4X4_100,4X4_250,4X4_1000,5X5_50,5X5_100,5X5_250,5X5_1000,6X6_50,6X6_100,6X6_250,6X6_1000,7X7_50,7X7_100,7X7_250,7X7_1000,ARUCO_ORIGINAL,APRILTAG_16h5,APRILTAG_25h9,APRILTAG_36h10,APRILTAG_36h11,ARUCO_MIP_36h12}
                         Fiducial markers family (default 6X6_1000)
+
+```
+
+#   Plot Feature-data
+
+The following utility plots:
++ State evolution
++ 3D Plot of the state evolution
++ Control velocities
++ Image feature error
++ Image feature evolution in a planar projection
++ SVD singular value evolution if saved
+
+Arguments:
++ directory (non optional) = were data is stored and output will be placed
++ pose = 4 coordinate state for the pose where the reference is taken
+
+To run:
+```
+$ python3 scripts/plot_data_desc.py -h
+usage: python3 plot_data_desc.py [-h] [--pose POSE POSE POSE POSE] directory
+
+Plotting single camera experiment data
+
+positional arguments:
+  directory             Directory name (default output/)
+
+options:
+  -h, --help            show this help message and exit
+  --pose POSE POSE POSE POSE
+                        Reference pose [x, y, z, yaw (degs)] default [0., 0., 3., 0]
+
 
 ```

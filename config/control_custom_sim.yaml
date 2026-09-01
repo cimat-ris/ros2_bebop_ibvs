@@ -7,7 +7,8 @@ CamR: [0.,-1., 0.,
 CamT: [0., 0., -0.05]
 # CamT: [0., 0., 0.]
 
-p0: [2., 2., 3., 0] #   ground_reference.png
+p0: [2., 2., 3., 0] #   Only translation
+# p0: [0., 0., 3., 0] #   ground_reference.png
 
 frequency: 30.
 robot_name: "parrot_bebop_2"
@@ -61,7 +62,7 @@ tracker_vals: [ 30,
 
 #   Contol
 polar: false
-gain: .1
+gain: .05
 gain_w: .5
 img_depth: 3.
 
