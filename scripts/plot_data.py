@@ -370,7 +370,7 @@ def plot3D(directory, state, pd):
     width = x_max - x_min
     height = y_max - y_min
     depth = z_max - z_min
-    sqrfact = max(width,height,depth)
+    sqrfact = 1.5*max(width,height,depth)
 
     x_min -= (sqrfact - width )/2
     x_max += (sqrfact - width )/2

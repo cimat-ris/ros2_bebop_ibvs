@@ -151,6 +151,8 @@ class Controller(Node):
         self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('matcher', ["NAN"])
         self.declare_parameter('matcher_vals', [0.])
+        self.declare_parameter('tracker', ["NAN"])
+        self.declare_parameter('tracker_vals', [0.])
         self.declare_parameter('aruco_dictionary', "")
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
@@ -172,6 +174,8 @@ class Controller(Node):
         self.camT = self.get_parameter('CamT').value
         matcher = self.get_parameter('matcher').value
         matcher_vals = self.get_parameter('matcher_vals').value
+        tracker = self.get_parameter('tracker').value
+        tracker_vals = self.get_parameter('tracker_vals').value
         aruco_dictionary = self.get_parameter('aruco_dictionary').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
@@ -211,6 +215,10 @@ class Controller(Node):
             self.matcher = {}
         else:
             self.matcher = {i:j for i, j in zip(matcher,matcher_vals)}
+        if tracker[0] == "NAN" :
+            self.tracker = {}
+        else:
+            self.tracker = {i:j for i, j in zip(tracker,tracker_vals)}
 
         self.ref_proc = False
         if len(aruco_dictionary) > 1 :
@@ -249,7 +257,8 @@ class Controller(Node):
                 patchSize    = int( self.matcher["patchSize"] ),
                 fastThreshold= int( self.matcher["fastThreshold"] )
                 )
-            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(image_ref, None)
+            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
             if self.desc_ref is None:
                 self.get_logger().error(f"No detected Features")
             else:
@@ -265,6 +274,47 @@ class Controller(Node):
                 self.flann = cv2.FlannBasedMatcher(index_params)
                 self.image_ref = image_ref
                 self.ref_proc = True
+
+        elif len(self.tracker) > 1 :
+
+            #   Reference
+            self.orb = cv2.ORB_create(
+                nfeatures    = int( self.tracker["nfeatures"] ),
+                scaleFactor  = self.tracker["scaleFactor"],
+                nlevels      = int( self.tracker["nlevels"] ),
+                edgeThreshold= int( self.tracker["edgeThreshold"] ),
+                patchSize    = int( self.tracker["patchSize"] ),
+                fastThreshold= int( self.tracker["fastThreshold"] )
+                )
+
+            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
+            if self.desc_ref is None:
+                self.get_logger().error(f"No detected Features")
+            else:
+
+                #   Matcher
+                index_params = {
+                    "algorithm": 6,
+                    "table_number": 20,
+                    "key_size": 10,
+                    "multi_probe_level": 2,
+                }
+
+                self.flann = cv2.FlannBasedMatcher(index_params)
+
+                self.lk_params = dict(winSize=(15, 15),
+                                 maxLevel=2,
+                                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+                self.image_ref = image_ref
+                self.image_ref_bw = gray_image
+                self.prev_image = np.zeros((gray_image.shape),
+                                           dtype = gray_image.dtype)
+                self.ref_proc = True
+                self.p = np.zeros((2,2), dtype = np.float32)
+                self.ids = np.zeros(2, dtype = np.int8)
+                self.match_threshold = self.tracker["matcher_threshold"]
 
         #   Publishers
         qos = QoSProfile(depth=2)
@@ -287,6 +337,11 @@ class Controller(Node):
             self.image_subscription = self.create_subscription(
                 Image, f"/{self.robot_name}/image",
                 self.image_recv_matcher,
+                img_qos)
+        elif len(self.tracker) > 1 and self.ref_proc:
+            self.image_subscription = self.create_subscription(
+                Image, f"/{self.robot_name}/image",
+                self.image_recv_tracker,
                 img_qos)
 
         if self.ref_proc:
@@ -326,8 +381,13 @@ class Controller(Node):
                 pass  # 'w' mode clears the file's contents
         elif len(self.matcher) > 1 :
             self.save_select = self.save_features
-            self.arucos_d = os.path.join(self.output, "features.dat")
-            with open(self.arucos_d, 'w') as file:
+            self.features_d = os.path.join(self.output, "features.dat")
+            with open(self.features_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        elif len(self.tracker) > 1 :
+            self.save_select = self.save_tracking
+            self.features_d = os.path.join(self.output, "features.dat")
+            with open(self.features_d, 'w') as file:
                 pass  # 'w' mode clears the file's contents
 
         if self.enable_log:
@@ -373,6 +433,118 @@ class Controller(Node):
         _p[1,:] /= self.f[1]
         return _p
 
+    def image_recv_tracker(self, msg):
+
+        # self.get_logger().info("Image received")
+        # print("PING")
+        try:
+            self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except CvBridgeError as e:
+            self.get_logger().error(f"Error converting image: {e}")
+        except KeyError as e:
+            self.get_logger().error(f"Robot name not found in topic: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Unexpected error: {e}")
+
+        gray_image = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
+
+        #   Tracking
+        # print(self.p)
+        new_pts, status, err = cv2.calcOpticalFlowPyrLK(
+            self.prev_image, gray_image,
+            self.p, None,
+            **self.lk_params)
+        self.prev_image = gray_image.copy()
+
+        # print(status)
+        status = status.reshape(-1)
+        # self.get_logger().info(new_pts)
+        self.p = new_pts[status == 1]
+        self.ids = self.ids[status == 1]
+
+        # If we have enough tracked points, find their matches in reference image
+        if self.p.shape[0] >= self.match_threshold:
+
+            _p_ref = np.float32([
+                self.kp_ref[i].pt
+                for i in self.ids
+            ])
+
+
+        else:
+            # Extract Matches if not enough
+            kp, desc = self.orb.detectAndCompute(gray_image, None)
+            knn_matches = self.flann.knnMatch(desc, self.desc_ref, k=2)
+
+            # Lowe ratio test
+            good_matches = []
+            for matches in knn_matches:
+                if len(matches) == 2:
+                    m, n = matches
+                    if m.distance < self.tracker["flann_ratio"] * n.distance:
+                        good_matches.append(m)
+
+            # print(good_matches)
+
+            if len(good_matches) < 3 :
+                if not self.lost_features:
+                    self.get_logger().warning("No Matches available")
+                    self.lost_features = True
+                self.prev_image = np.zeros((gray_image.shape),
+                                           dtype = gray_image.dtype)
+                self.p = np.zeros((2,2), dtype = np.float32)
+                self.ids = np.zeros(2, dtype = np.int8)
+                self.points = None
+                self.points_ref = None
+                return
+            if self.lost_features:
+                self.get_logger().warning("Matches available")
+                self.lost_features = False
+
+            # Matching coordinates as NumPy arrays
+            self.p = np.float32([
+                kp[m.queryIdx].pt
+                for m in good_matches
+            ])
+
+            _p_ref = np.float32([
+                self.kp_ref[m.trainIdx].pt
+                for m in good_matches
+            ])
+
+            self.ids = np.array([m.trainIdx for m in good_matches],
+                                dtype = np.int8)
+
+        # print(self.p)
+        # print(_p_ref)
+
+        #   Normalize
+        self.points = self.normalize(self.p.astype(float).T)
+        self.points_ref = self.normalize(_p_ref.astype(float).T)
+
+        if self.enable_polar:
+            _r = np.linalg.norm(self.points, axis = 0)
+            _t = np.arctan2(self.points[1,:], self.points[0,:])
+            self.points = np.c_[_r, _t].T
+            _r = np.linalg.norm(self.points_ref, axis = 0)
+            _t = np.arctan2(self.points_ref[1,:], self.points_ref[0,:])
+            self.points_ref = np.c_[_r, _t].T
+
+
+        #   Publish detection
+        # TODO
+        # match_image = cv2.drawMatches(
+        #     self.cv_image,
+        #     kp,
+        #     self.image_ref,
+        #     self.kp_ref,
+        #     good_matches,
+        #     None,
+        #     flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+        # )
+        #
+        # self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
+
     def image_recv_matcher(self, msg):
 
         # self.get_logger().info("Image received")
@@ -386,7 +558,7 @@ class Controller(Node):
         except Exception as e:
             self.get_logger().error(f"Unexpected error: {e}")
 
-        # Extract ArUcos
+        # Extract matches
         gray_image = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
         kp, desc = self.orb.detectAndCompute(gray_image, None)
         knn_matches = self.flann.knnMatch(desc, self.desc_ref, k=2)
@@ -550,7 +722,7 @@ class Controller(Node):
         if self.points is None:
             return
 
-        with open(self.arucos_d, 'ab') as f:
+        with open(self.features_d, 'ab') as f:
             for i, m in enumerate (self.good_matches):
                 data = (t,m.trainIdx)
                 data += tuple(self.p[i, :].reshape(-1))
@@ -560,6 +732,25 @@ class Controller(Node):
         with open(self.error_d, 'ab') as f:
             for i, m in enumerate (self.good_matches):
                 data = (t,m.trainIdx)
+                data += tuple(self.error[:, i].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
+    def save_tracking(self,t ):
+
+        if self.p.shape[0] <= self.match_threshold:
+            return
+
+        with open(self.features_d, 'ab') as f:
+            for i, m in enumerate (self.ids):
+                data = (t,m)
+                data += tuple(self.p[i, :].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
+        with open(self.error_d, 'ab') as f:
+            for i, m in enumerate (self.ids):
+                data = (t,m)
                 data += tuple(self.error[:, i].reshape(-1))
                 binary = struct.pack('didd', *data)
                 f.write(binary)

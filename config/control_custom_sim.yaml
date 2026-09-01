@@ -7,7 +7,7 @@ CamR: [0.,-1., 0.,
 CamT: [0., 0., -0.05]
 # CamT: [0., 0., 0.]
 
-p0: [1., 1., 3., 0] #   ground_reference.png
+p0: [2., 2., 3., 0] #   ground_reference.png
 
 frequency: 30.
 robot_name: "parrot_bebop_2"
@@ -16,22 +16,39 @@ landing_threshold: 0.03
 hover_height: 1.5
 gain_takeoff: .5
 
-#   Image proc
-matcher: [  nfeatures,
+# #   Image matcher
+# matcher: [  nfeatures,
+#             scaleFactor,
+#             nlevels,
+#             edgeThreshold,
+#             patchSize,
+#             fastThreshold,
+#             flann_ratio]
+# matcher_vals: [ 30,
+#                 1.2,
+#                 8,
+#                 15,
+#                 30,
+#                 20,
+#                 0.7]
+#   Image track
+tracker: [  nfeatures,
             scaleFactor,
             nlevels,
             edgeThreshold,
             patchSize,
             fastThreshold,
-            flann_ratio]
-matcher_vals: [ 30,
+            flann_ratio,
+            matcher_threshold]
+tracker_vals: [ 30,
                 1.2,
                 8,
                 15,
                 30,
                 20,
-                0.7]
-
+                0.7,
+                4]
+# aruco_dictionary: 4X4_1000
 # aruco:
 #     dictionary: 6X6_250
 #     # dictionary: APRILTAG_36h11
@@ -45,8 +62,10 @@ matcher_vals: [ 30,
 #   Contol
 polar: false
 gain: .1
-gain_w: 0.5
+gain_w: .5
 img_depth: 3.
 
 save_log: false
+# ref_image: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/config/ground_reference_arucos.png
+ref_image: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/config/ground_reference.png
 output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output

@@ -327,7 +327,7 @@ def plot3D(directory, state, pd):
 
     pos_array = np.zeros((6,state.shape[1]))
     pos_array[[0,1,2,5],:] = state[1:5,:]
-    pos_array[4,:] = pi/2.
+    pos_array[4,:] = pi
 
     x_min = min(x_min, pd[0])
     x_max = max(x_max, pd[0])
@@ -348,7 +348,7 @@ def plot3D(directory, state, pd):
     width = x_max - x_min
     height = y_max - y_min
     depth = z_max - z_min
-    sqrfact = max(width,height,depth)
+    sqrfact = 1.5*max(width,height,depth)
 
     x_min -= (sqrfact - width )/2
     x_max += (sqrfact - width )/2
@@ -538,7 +538,7 @@ def read_data(directory):
 def main(arg):
 
     pd = np.array([arg.pose[0], arg.pose[1], arg.pose[2],
-                   0, pi/2., pi*arg.pose[3]/180.])
+                   0, pi, pi*arg.pose[3]/180.])
     directory = arg.directory
 
     #   TODO: revisar tamaño del archivo
