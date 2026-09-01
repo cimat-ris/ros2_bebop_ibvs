@@ -23,6 +23,30 @@ LANDING = 3
 STOP = 4
 INITCOND = 5
 
+markers_list = ["4X4_50" ,
+        "4X4_100" ,
+        "4X4_250" ,
+        "4X4_1000" ,
+        "5X5_50" ,
+        "5X5_100" ,
+        "5X5_250" ,
+        "5X5_1000" ,
+        "6X6_50" ,
+        "6X6_100" ,
+        "6X6_250" ,
+        "6X6_1000" ,
+        "7X7_50" ,
+        "7X7_100" ,
+        "7X7_250" ,
+        "7X7_1000" ,
+        "ARUCO_ORIGINAL" ,
+        "APRILTAG_16h5" ,
+        "APRILTAG_25h9" ,
+        "APRILTAG_36h10" ,
+        "APRILTAG_36h11" ,
+        "ARUCO_MIP_36h12"]
+
+
 def get_yaw(orientation):
     a = 2* (orientation.w * orientation.z + orientation.x * orientation.y)
     b = 1 - 2 *(orientation.y**2 + orientation.z** 2)
@@ -127,8 +151,7 @@ class Controller(Node):
         self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('matcher', ["NAN"])
         self.declare_parameter('matcher_vals', [0.])
-        self.declare_parameter('aruco', ["NAN"])
-        self.declare_parameter('aruco_vals', [0])
+        self.declare_parameter('aruco_dictionary', "")
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
@@ -149,8 +172,7 @@ class Controller(Node):
         self.camT = self.get_parameter('CamT').value
         matcher = self.get_parameter('matcher').value
         matcher_vals = self.get_parameter('matcher_vals').value
-        aruco = self.get_parameter('aruco').value
-        aruco_vals = self.get_parameter('aruco_vals').value
+        aruco_dictionary = self.get_parameter('aruco_dictionary').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
@@ -184,31 +206,37 @@ class Controller(Node):
             self.get_logger().error(f"Image {self.ref_image} could not be read ")
             return
 
-        if aruco[0] == "NAN" :
-            self.aruco = {}
-        else:
-            self.aruco = {i:j for i, j in zip(aruco,aruco_vals)}
+
         if matcher[0] == "NAN" :
             self.matcher = {}
         else:
             self.matcher = {i:j for i, j in zip(matcher,matcher_vals)}
 
-
-        if len(self.aruco) > 1 :
-            # TODO adapt to yaml config
+        self.ref_proc = False
+        if len(aruco_dictionary) > 1 :
+            markers = markers_list.index(aruco_dictionary)
             gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
-            aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
+            # TODO use makers
+            # aruco_dict = cv2.aruco.getPredefinedDictionary(makers)
+            aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
             parameters = cv2.aruco.DetectorParameters()
+            # parameters.adaptiveThreshWinSizeMin = 141
+            # parameters.adaptiveThreshWinSizeMax = 251
+            # parameters.adaptiveThreshWinSizeStep = 20
+            # parameters.adaptiveThreshConstant = 4
+            # parameters.perspectiveRemovePixelPerCell = 10
+            # parameters.perspectiveRemoveIgnoredMarginPerCell = 0.2
             self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
             self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
             if self.ids_ref is None:
-                self.get_logger().error(f"No detected Markers")
-                return
-            self._ids_ref = self.ids_ref.tolist()
-            cv2.aruco.drawDetectedMarkers(image_ref,
-                                          self.corners_ref,
-                                          self.ids_ref,
-                                           borderColor = (100,1.,0.) )
+                self.get_logger().warning(f"No detected Markers")
+            else:
+                self._ids_ref = self.ids_ref.tolist()
+                cv2.aruco.drawDetectedMarkers(image_ref,
+                                            self.corners_ref,
+                                            self.ids_ref,
+                                            borderColor = (100,1.,0.) )
+                self.ref_proc = True
             cv2.imwrite("reference_proc.png", image_ref)
 
         elif len(self.matcher) > 1 :
@@ -224,18 +252,19 @@ class Controller(Node):
             self.kp_ref, self.desc_ref = self.orb.detectAndCompute(image_ref, None)
             if self.desc_ref is None:
                 self.get_logger().error(f"No detected Features")
-                return
+            else:
 
-            #   Matcher
-            index_params = {
-                "algorithm": 6,
-                "table_number": 20,
-                "key_size": 10,
-                "multi_probe_level": 2,
-            }
+                #   Matcher
+                index_params = {
+                    "algorithm": 6,
+                    "table_number": 20,
+                    "key_size": 10,
+                    "multi_probe_level": 2,
+                }
 
-            self.flann = cv2.FlannBasedMatcher(index_params)
-            self.image_ref = image_ref
+                self.flann = cv2.FlannBasedMatcher(index_params)
+                self.image_ref = image_ref
+                self.ref_proc = True
 
         #   Publishers
         qos = QoSProfile(depth=2)
@@ -249,19 +278,21 @@ class Controller(Node):
         #   Image bridge
         img_qos = QoSProfile(depth=2)
         self.bridge = CvBridge()
-        if len(self.aruco) > 1 :
+        if len(aruco_dictionary) > 1 and self.ref_proc :
             self.image_subscription = self.create_subscription(
                 Image, f"/{self.robot_name}/image",
-                self.image_recv,
+                self.image_recv_aruco,
                 img_qos)
-        elif len(self.matcher) > 1 :
+        elif len(self.matcher) > 1 and self.ref_proc:
             self.image_subscription = self.create_subscription(
                 Image, f"/{self.robot_name}/image",
                 self.image_recv_matcher,
                 img_qos)
-        self.image_pub = self.create_publisher(Image,
-                                               f"/{self.robot_name}/matching",
-                                               img_qos)
+
+        if self.ref_proc:
+            self.image_pub = self.create_publisher(Image,
+                                                f"/{self.robot_name}/matching",
+                                                img_qos)
 
         #   Subscriptions
         self.pos_sub = self.create_subscription(Pose,
@@ -288,7 +319,7 @@ class Controller(Node):
             pass  # 'w' mode clears the file's contents
 
         #   With Arucos
-        if len(self.aruco) > 1 :
+        if len(aruco_dictionary) > 1 :
             self.save_select = self.save_arucos
             self.arucos_d = os.path.join(self.output, "arUcos.dat")
             with open(self.arucos_d, 'w') as file:
@@ -320,7 +351,11 @@ class Controller(Node):
         self.m_vel = Twist()
 
         # INIT control loop
-        self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+        if self.ref_proc:
+            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+        else:
+            # openloop
+            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
 
 
@@ -569,6 +604,126 @@ class Controller(Node):
             # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
             f.write(binary)
 
+    def openloop(self):
+
+        if self.state == IDLE:
+            #   Change state
+            if self.new_state == TAKEOFF:
+                self.get_logger().info("State change: TAKEOFF")
+                self.state = TAKEOFF
+                self.takeoff_complete = False
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
+        elif self.state == TAKEOFF:
+            current_z = self.current_pose.position.z
+            delta = current_z- self.takeoff_height
+
+            if abs(delta) < self.takeoff_threshold and not self.takeoff_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
+                self.takeoff_complete = True
+
+            msg = Twist()
+            msg.linear.z = -self.gain_takeoff*float(delta)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {msg.linear.z}")
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
+        elif self.state == INITCOND:
+            _my_position = [self.current_pose.position.x,
+                           self.current_pose.position.y,
+                           self.current_pose.position.z]
+            my_position = np.array(_my_position)
+            _orientation = [self.current_pose.orientation.x,
+                            self.current_pose.orientation.y,
+                            self.current_pose.orientation.z,
+                            self.current_pose.orientation.w]
+
+            _delta = my_position- self.initial_cond[:3]
+            if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Initial condition reached")
+                self.init_complete = True
+
+            msg = Twist()
+            _u = -self.gain_takeoff * _delta
+            _R = quaternion_matrix(_orientation)
+            _R = _R[:3,:]
+            _R = _R[:,:3]
+            _u = _R.T @ _u
+
+            _, _, _yaw = euler_from_matrix(_R)
+
+            _yaw = _yaw - self.initial_cond[3]
+            _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+            _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+            msg.linear.x = float(_u[0])
+            msg.linear.y = float(_u[1])
+            msg.linear.z = float(_u[2])
+            msg.angular.z = float(-self.gain_takeoff* _yaw)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {_u}")
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+        elif self.state == LANDING:
+
+            current_z = self.current_pose.position.z
+            msg = Twist()
+
+            if current_z > self.landing_threshold:
+                # Descender controladamente
+                msg.linear.z = self.gain_takeoff* float(- current_z)
+                self.cmd_pub.publish(msg)
+            else:
+                #   Landing finished
+                self.get_logger().info("¡Landing complete!")
+                self.state = IDLE
+                self.enable = False
+                self.cmd_enable.publish(Bool(data=self.enable))
+                self.cmd_pub.publish(Twist())
+
+            #   Change state
+            if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
+                self.get_logger().info("State change: IDLE")
+                self.state = IDLE
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+
+
+        elif self.state == STOP:
+            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(Twist())
+            self.enable = False
+            self.cmd_enable.publish(Bool(data=self.enable))
+            self.get_logger().info("State change: IDLE")
+            self.state = IDLE
+
+
     def control_loop(self):
 
         if self.state == IDLE:
@@ -751,7 +906,7 @@ class Controller(Node):
 
             # self.u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
             self._u = - self.gain * L_inv @ self.error.T.reshape((-1,1))
-            self._u *= 2./self.error.shape[1]
+            # self._u *= 2./self.error.shape[1]
 
 
             # if abs(self.u[1].T) > 0.05 :
