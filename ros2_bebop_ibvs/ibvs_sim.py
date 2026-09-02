@@ -203,7 +203,7 @@ class Controller(Node):
         matcher_vals = self.get_parameter('matcher_vals').value
         tracker = self.get_parameter('tracker').value
         tracker_vals = self.get_parameter('tracker_vals').value
-        aruco_dictionary = self.get_parameter('aruco_dictionary').value
+        self.aruco_dictionary = self.get_parameter('aruco_dictionary').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
@@ -231,13 +231,6 @@ class Controller(Node):
             self.robot_name = 'bebop'
         self.get_logger().info(f"Robot Name: {self.robot_name}")
 
-        #   Reference image
-        image_ref = cv2.imread(self.ref_image)
-        if  image_ref is None :
-            self.get_logger().error(f"Image {self.ref_image} could not be read ")
-            return
-
-
         if matcher[0] == "NAN" :
             self.matcher = {}
         else:
@@ -247,9 +240,126 @@ class Controller(Node):
         else:
             self.tracker = {i:j for i, j in zip(tracker,tracker_vals)}
 
-        self.ref_proc = False
-        if len(aruco_dictionary) > 1 :
-            markers = markers_list.index(aruco_dictionary)
+        #   Reference image
+        enable_IBVS = self.config_reference()
+            #   config loop
+
+        #   State
+        self.state = IDLE
+        self.new_state = IDLE
+        self.current_pose = Pose()
+        self.data2save = False
+        self.u = np.zeros(6)
+        self._u = np.zeros(6)
+        # self.enable = False
+        self.found_arucos_w = False
+        self.lost_features = False
+        self.points = None
+        self.points_ref = None
+        self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
+        self.m_vel = Twist()
+
+        #   Publishers
+        qos = QoSProfile(depth=2)
+        self.cmd_pub = self.create_publisher(Twist,
+                                             f"/{self.robot_name}/cmd_vel",
+                                             qos)
+        self.cmd_enable = self.create_publisher(Bool,
+                                                f"/{self.robot_name}/enable",
+                                                qos)
+
+        #   Subscribers
+        img_qos = QoSProfile(depth=2)
+        self.pos_sub = self.create_subscription(Pose,
+                                                f"/{self.robot_name}/pose",
+                                                self.pos_changed,
+                                                qos)
+        self.state_sub = self.create_subscription(Int32,
+                                                  "/state",
+                                                  self.state_changed,
+                                                  qos)
+
+        #   Setup IBVS
+        if enable_IBVS:
+            #   Storage data
+            self.config_data_storage()
+
+            #   Messages
+            self.bridge = CvBridge()
+            if len(self.aruco_dictionary) > 1:
+                self.image_subscription = self.create_subscription(
+                    Image, f"/{self.robot_name}/image",
+                    self.image_recv_aruco,
+                    img_qos)
+            elif len(self.matcher) > 1:
+                self.image_subscription = self.create_subscription(
+                    Image, f"/{self.robot_name}/image",
+                    self.image_recv_matcher,
+                    img_qos)
+            elif len(self.tracker) > 1:
+                self.image_subscription = self.create_subscription(
+                    Image, f"/{self.robot_name}/image",
+                    self.image_recv_tracker,
+                    img_qos)
+
+            self.image_pub = self.create_publisher(Image,
+                                                f"/{self.robot_name}/matching",
+                                                img_qos)
+
+            #   loop
+            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+        else:
+            # openloop
+            self.timer = self.create_timer(1.0 / self.frequency, self.openloop)
+
+
+    def config_data_storage(self):
+        #   output files for data storage:
+        self.position_d = os.path.join(self.output, "position.dat")
+        with open(self.position_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.vel_d = os.path.join(self.output, "velocities.dat")
+        with open(self.vel_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.norm_e_d = os.path.join(self.output, "norm_error.dat")
+        with open(self.norm_e_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.error_d = os.path.join(self.output, "error.dat")
+        with open(self.error_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+
+        if len(self.aruco_dictionary) > 1 :
+            #   With Arucos
+            self.save_select = self.save_arucos
+            self.arucos_d = os.path.join(self.output, "arUcos.dat")
+            with open(self.arucos_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        elif len(self.matcher) > 1 :
+            #   With Matching points
+            self.save_select = self.save_features
+            self.features_d = os.path.join(self.output, "features.dat")
+            with open(self.features_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        elif len(self.tracker) > 1 :
+            #   With Matching tracking points
+            self.save_select = self.save_tracking
+            self.features_d = os.path.join(self.output, "features.dat")
+            with open(self.features_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+
+        if self.enable_log:
+            self.log_d = os.path.join(self.output, "log.dat")
+            with open(self.log_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+
+    def config_reference(self):
+        image_ref = cv2.imread(self.ref_image)
+        if  image_ref is None :
+            self.get_logger().error(f"Image {self.ref_image} could not be read")
+            return False
+
+        if len(self.aruco_dictionary) > 1 :
+            markers = markers_list.index(self.aruco_dictionary)
             gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
             # TODO use makers
             # aruco_dict = cv2.aruco.getPredefinedDictionary(makers)
@@ -265,14 +375,15 @@ class Controller(Node):
             self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
             if self.ids_ref is None:
                 self.get_logger().warning(f"No detected Markers")
+                return False
             else:
                 self._ids_ref = self.ids_ref.tolist()
                 cv2.aruco.drawDetectedMarkers(image_ref,
                                             self.corners_ref,
                                             self.ids_ref,
                                             borderColor = (100,1.,0.) )
-                self.ref_proc = True
             cv2.imwrite("reference_proc.png", image_ref)
+            return True
 
         elif len(self.matcher) > 1 :
             #   Reference
@@ -288,6 +399,7 @@ class Controller(Node):
             self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
             if self.desc_ref is None:
                 self.get_logger().error(f"No detected Features")
+                return False
             else:
 
                 #   Matcher
@@ -300,7 +412,7 @@ class Controller(Node):
 
                 self.flann = cv2.FlannBasedMatcher(index_params)
                 self.image_ref = image_ref
-                self.ref_proc = True
+            return True
 
         elif len(self.tracker) > 1 :
 
@@ -317,7 +429,8 @@ class Controller(Node):
             gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
             self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
             if self.desc_ref is None:
-                self.get_logger().error(f"No detected Features")
+                self.get_logger().error(f"No detected Features ")
+                return False
             else:
 
                 #   Matcher
@@ -338,113 +451,13 @@ class Controller(Node):
                 self.image_ref_bw = gray_image
                 self.prev_image = np.zeros((gray_image.shape),
                                            dtype = gray_image.dtype)
-                self.ref_proc = True
                 self.p = np.zeros((2,2), dtype = np.float32)
                 self.ids = np.zeros(2, dtype = np.int8)
                 self.match_threshold = self.tracker["matcher_threshold"]
-
-        #   Publishers
-        qos = QoSProfile(depth=2)
-        self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}/cmd_vel",
-                                             qos)
-        self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}/enable",
-                                                qos)
-
-        #   Image bridge
-        img_qos = QoSProfile(depth=2)
-        self.bridge = CvBridge()
-        if len(aruco_dictionary) > 1 and self.ref_proc :
-            self.image_subscription = self.create_subscription(
-                Image, f"/{self.robot_name}/image",
-                self.image_recv_aruco,
-                img_qos)
-        elif len(self.matcher) > 1 and self.ref_proc:
-            self.image_subscription = self.create_subscription(
-                Image, f"/{self.robot_name}/image",
-                self.image_recv_matcher,
-                img_qos)
-        elif len(self.tracker) > 1 and self.ref_proc:
-            self.image_subscription = self.create_subscription(
-                Image, f"/{self.robot_name}/image",
-                self.image_recv_tracker,
-                img_qos)
-
-        if self.ref_proc:
-            self.image_pub = self.create_publisher(Image,
-                                                f"/{self.robot_name}/matching",
-                                                img_qos)
-
-        #   Subscriptions
-        self.pos_sub = self.create_subscription(Pose,
-                                                f"/{self.robot_name}/pose",
-                                                self.pos_changed,
-                                                qos)
-        self.state_sub = self.create_subscription(Int32,
-                                                  "/state",
-                                                  self.state_changed,
-                                                  qos)
-        
-        #   output files for data storage:
-        self.position_d = os.path.join(self.output, "position.dat")
-        with open(self.position_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.vel_d = os.path.join(self.output, "velocities.dat")
-        with open(self.vel_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.norm_e_d = os.path.join(self.output, "norm_error.dat")
-        with open(self.norm_e_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.error_d = os.path.join(self.output, "error.dat")
-        with open(self.error_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-
-        #   With Arucos
-        if len(aruco_dictionary) > 1 :
-            self.save_select = self.save_arucos
-            self.arucos_d = os.path.join(self.output, "arUcos.dat")
-            with open(self.arucos_d, 'w') as file:
-                pass  # 'w' mode clears the file's contents
-        elif len(self.matcher) > 1 :
-            self.save_select = self.save_features
-            self.features_d = os.path.join(self.output, "features.dat")
-            with open(self.features_d, 'w') as file:
-                pass  # 'w' mode clears the file's contents
-        elif len(self.tracker) > 1 :
-            self.save_select = self.save_tracking
-            self.features_d = os.path.join(self.output, "features.dat")
-            with open(self.features_d, 'w') as file:
-                pass  # 'w' mode clears the file's contents
-
-        if self.enable_log:
-            self.log_d = os.path.join(self.output, "log.dat")
-            with open(self.log_d, 'w') as file:
-                pass  # 'w' mode clears the file's contents
-
-        #   State
-        self.state = IDLE
-        self.u = np.zeros(6)
-        self._u = np.zeros(6)
-        self.new_state = IDLE
-        self.current_pose = Pose()
-        self.data2save = False
-        self.enable = False
-        self.found_arucos_w = False
-        self.lost_features = False
-        self.points = None
-        self.points_ref = None
-        self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
-        self.m_vel = Twist()
-
-        # INIT control loop
-        if self.ref_proc:
-            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+                return True
         else:
-            # openloop
-            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
-
-
+            self.get_logger().warning(f"No control configuration detected.")
+            return False
 
     def state_changed(self, msg):
         self.new_state = msg.data
@@ -596,7 +609,7 @@ class Controller(Node):
 
         # print(good_matches)
 
-        if len(good_matches) < 3 :
+        if len(good_matches) < 4 :
             if not self.lost_features:
                 self.get_logger().warning("No Matches available")
                 self.lost_features = True
@@ -1062,6 +1075,11 @@ class Controller(Node):
 
             self.get_logger().error("Image error can not be computed")
 
+            self.m_vel.linear.x = float(self.f_stop * self.u[0])
+            self.m_vel.linear.y = float(self.f_stop *self.u[1])
+            self.m_vel.linear.z = float(self.f_stop *self.u[2])
+            self.m_vel.angular.z = float(self.f_stop *self.u[5])
+            self.f_stop *= 0.5
             if self.data2save:
                 self.save_data()
 
@@ -1085,6 +1103,7 @@ class Controller(Node):
                 self.init_complete = False
 
         elif self.state == IBVS:
+            self.f_stop = 0.5
             #   IBVS
             self.error = self.points - self.points_ref
             if self.enable_polar:
