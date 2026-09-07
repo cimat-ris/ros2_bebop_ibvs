@@ -22,6 +22,7 @@ TAKEOFF = 2
 LANDING = 3
 STOP = 4
 INITCOND = 5
+RESET_TRACKING = 6
 
 markers_list = ["4X4_50" ,
         "4X4_100" ,
@@ -251,9 +252,11 @@ class Controller(Node):
         self.data2save = False
         self.u = np.zeros(6)
         self._u = np.zeros(6)
+        self.f_stop = 0.5
         # self.enable = False
         self.found_arucos_w = False
         self.lost_features = False
+        self.reset_flag = False
         self.points = None
         self.points_ref = None
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
@@ -460,6 +463,9 @@ class Controller(Node):
             return False
 
     def state_changed(self, msg):
+        if msg.data == RESET_TRACKING:
+            self.reset_flag = True
+            return
         self.new_state = msg.data
         
     def pos_changed(self, msg):
@@ -503,15 +509,10 @@ class Controller(Node):
         self.ids = self.ids[status == 1]
 
         # If we have enough tracked points, find their matches in reference image
-        if self.p.shape[0] >= self.match_threshold:
 
-            _p_ref = np.float32([
-                self.kp_ref[i].pt
-                for i in self.ids
-            ])
+        if self.p.shape[0] < self.match_threshold or self.reset_flag:
+            self.reset_flag = False
 
-
-        else:
             # Extract Matches if not enough
             kp, desc = self.orb.detectAndCompute(gray_image, None)
             knn_matches = self.flann.knnMatch(desc, self.desc_ref, k=2)
@@ -554,6 +555,11 @@ class Controller(Node):
 
             self.ids = np.array([m.trainIdx for m in good_matches],
                                 dtype = np.int8)
+        else:
+            _p_ref = np.float32([
+                self.kp_ref[i].pt
+                for i in self.ids
+            ])
 
         # print(self.p)
         # print(_p_ref)
@@ -905,6 +911,8 @@ class Controller(Node):
             msg.angular.z = float(-self.gain_takeoff* _yaw)
             self.cmd_pub.publish(msg)
 
+
+
             self.get_logger().debug(f"Control input: {_u}")
             #   Change state
             if self.new_state == LANDING:
@@ -1024,7 +1032,7 @@ class Controller(Node):
             _yaw = _yaw - self.initial_cond[3]
             _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
             _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
-
+            #
             msg.linear.x = float(_u[0])
             msg.linear.y = float(_u[1])
             msg.linear.z = float(_u[2])
