@@ -112,9 +112,11 @@ Clone the package into your catkin workspace (in src folder):
 ```bash
 cd
 cd ws_bebop
-git clone https://github.com/cimat-ris/ros2_bebop_ibvs.git src/
-# For off line development
-# git fork https://github.com/cimat-ris/ros2_bebop_ibvs.git src/
+git clone https://github.com/cimat-ris/ros2_bebop_ibvs.git src/ros2_bebop_ibvs
+# For off tree development
+# git fork https://github.com/cimat-ris/ros2_bebop_ibvs.git src/ros2_bebop_ibvs
+# Download dependency
+git clone https://github.com/cimat-ris/formation_interfaces.git src/formation_interfaces
 ```
 
 Compile
@@ -165,7 +167,7 @@ alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  #  
 
 ```bash
 # screen 1
-ros2 launch   ros2_bebop_ibvs multiple_bebop1_sim.launch.py
+ros2 launch   ros2_bebop_ibvs multiple_bebop1_ibfc_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3

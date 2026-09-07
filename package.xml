@@ -4,19 +4,21 @@
   <name>ros2_bebop_ibvs</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="juliordzcer@outlook.com">jr</maintainer>
+  <maintainer email="echavezaparicio@gmail.com">axolomancer</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rlcpy</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  
+  <depend>formation_interfaces</depend>
+
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>ament_xmllint</test_depend>
   <test_depend>python3-pytest</test_depend>
+  <test_depend>formation_interfaces</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
