@@ -156,6 +156,8 @@ alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
 alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
+alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  #  Reset tracking points
+
 ```
 
 

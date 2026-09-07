@@ -216,7 +216,7 @@ def plotVel(directory, data):
     fig_v.suptitle("Velocities")
     symbols = plot_time(ax_v, time, velocities, color_offset = 1)
     ax_v.legend(symbols,labels, loc=1)
-    ax_v.set_ylim([-.15,.15])
+    ax_v.set_ylim([-.055,.055])
     # plt.show()
     name = os.path.join(directory ,"Velocities.pdf")
     plt.savefig(name,bbox_inches='tight')
@@ -232,7 +232,7 @@ def plotNErr(directory, data):
         #   Plot error
     fig_e, ax_e = plt.subplots( figsize=(6,2))
     fig_e.suptitle("Error")
-    plot_time(ax_e, time,error.reshape((1,-1)) )
+    plot_time(ax_e, time,error.reshape((1,-1)), ref = [0.] )
 
     print("Minimun error= "+ str(error.min()))
     name = os.path.join(directory ,"Error_Norm.pdf")
