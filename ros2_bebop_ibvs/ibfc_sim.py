@@ -7,7 +7,8 @@ from geometry_msgs.msg import Twist, Pose
 from std_msgs.msg import Bool, Int32
 from std_srvs.srv import Empty
 from sensor_msgs.msg import Image
-from formation_interfaces.msg import Corners, ArUco
+from formation_interfaces.msg import ArUco, Corners
+from formation_interfaces.msg import DeltaS
 
 from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
@@ -24,6 +25,29 @@ TAKEOFF = 2
 LANDING = 3
 STOP = 4
 INITCOND = 5
+
+markers_list = ["4X4_50" ,
+        "4X4_100" ,
+        "4X4_250" ,
+        "4X4_1000" ,
+        "5X5_50" ,
+        "5X5_100" ,
+        "5X5_250" ,
+        "5X5_1000" ,
+        "6X6_50" ,
+        "6X6_100" ,
+        "6X6_250" ,
+        "6X6_1000" ,
+        "7X7_50" ,
+        "7X7_100" ,
+        "7X7_250" ,
+        "7X7_1000" ,
+        "ARUCO_ORIGINAL" ,
+        "APRILTAG_16h5" ,
+        "APRILTAG_25h9" ,
+        "APRILTAG_36h10" ,
+        "APRILTAG_36h11" ,
+        "ARUCO_MIP_36h12"]
 
 def get_yaw(orientation):
     a = 2* (orientation.w * orientation.z + orientation.x * orientation.y)
@@ -58,6 +82,16 @@ def interaction_matrix_y(points,Z):
     L[:,6]  =   points[1,:]/Z
     L[:,7]  =  -points[0,:]*points[1,:]
 
+    return L.reshape((-1,4))
+
+def interaction_matrix_z(points,Z):
+    n = points.shape[1]
+    L = np.zeros((n,8))
+    L[:,0]  =   L[:,5] = -1/Z
+    L[:,2]  =   points[0,:]/Z
+    L[:,3]  =   points[1,:]
+    L[:,6]  =   points[1,:]/Z
+    L[:,7] =   -points[0,:]
     return L.reshape((-1,4))
 
 def interaction_matrix_t(points,Z):
@@ -97,6 +131,31 @@ def Inv_Moore_Penrose(L):
         return None
     return np.linalg.inv(A) @ L.T
 
+def custom_draw_matching(image1, image2, points1, points2,
+                         color1=(0, 0, 255), color2=(0, 255, 0),
+                         point_radius=3, line_thickness = 1):
+
+    _shape = list(image1.shape)
+    W = _shape[1]
+    _shape[1] *= 2
+    _shape = tuple(_shape)
+    output_image = np.zeros(_shape, dtype = image1.dtype)
+    output_image[:,:W,:] = image1.copy()
+    output_image[:,W:,:] = image2.copy()
+
+    # Draw points from the first array
+    _points2 = points2.copy()
+    _points2 += np.array([W,0.])
+    for i in range(points1.shape[0]):
+        # Draw the line
+        cv2.line(output_image, points1[i,:].astype(int), _points2[i,:].astype(int), color1, line_thickness)
+
+        # Draw points
+        cv2.circle(output_image, points1[i,:].astype(int), point_radius, color1, -1)
+        cv2.circle(output_image, _points2[i,:].astype(int), point_radius, color2, -1)
+
+    return output_image
+
 class Controller(Node):
 
     def __init__(self):
@@ -105,168 +164,11 @@ class Controller(Node):
         #   Save data
         self.proc_paramaters()
 
-        #   inital conditions
-        self.initial_cond =  np.array(self.initial_cond)
-        self.initial_cond = self.initial_cond.reshape((-1,4))
-        self.initial_cond = self.initial_cond[self.label].reshape(-1)
-
+        #   Logger
         self.get_logger().info(f"{self.label}_ki  = {self.k_int}")
 
-        #   Camera calibration data
-        self.f = [self.K[0], self.K[4]]
-        self.pPrinc = [self.K[2],self.K[5]]
-        self.K = np.array(self.K).reshape((3,3))
-        print(self.K)
-
-        #   Graph Laplacian
-        if len(self.L) != self.n_agents**2 :
-            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
-            self.L = np.ones((self.n_agents,self.n_agents)) - np.eye(self.n_agents)
-        else:
-            self.L = np.array(self.L).reshape((-1,self.n_agents))
-        _neighbors = self.L[self.label,:].tolist()
-        self.in_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
-        _neighbors = self.L[:,self.label].tolist()
-        self.out_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
-
-        if not self.robot_name:
-            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
-            self.robot_name = 'bebop'
-        # self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
-
-        #   Detector
-        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_1000)
-        parameters = cv2.aruco.DetectorParameters()
-        self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
-
-        #   Reference image
-        self.ids_ref = [None]* self.n_agents
-        self._ids_ref = [None]* self.n_agents
-        self.points_ref = [None]* self.n_agents
-        self.corners_ref = [None]* self.n_agents
-        for i in range(self.n_agents):
-            image_ref = cv2.imread(f"{self.reference_image_prefix}_{i}.png")
-            if  image_ref is None :
-                self.get_logger().error(f"Image {self.reference_image_prefix}_{i}.png could not be read ")
-                return
-            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
-
-            corners_ref, ids_ref, rejected = self.detector.detectMarkers(gray_image)
-            if ids_ref is None:
-                self.get_logger().error(f"No detected Markers")
-                return
-            self.corners_ref[i] = corners_ref
-            _corners_ref = np.array( corners_ref)
-            _corners_ref = _corners_ref.astype(float).reshape((-1,2)).T
-            self.points_ref[i] = self.normalize(_corners_ref)
-            self._ids_ref[i]  = ids_ref
-            self.ids_ref[i]  = [ j[0] for j in  ids_ref.tolist()]
-            cv2.aruco.drawDetectedMarkers(image_ref, corners_ref, ids_ref,
-                                         borderColor = (100,1.,0.) )
-            _name = os.path.join(self.output, f"reference_proc_{self.label}_{i}.png")
-            cv2.imwrite(_name, image_ref)
-        self.ids = [None]*self.n_agents
-        self.points = [None]*self.n_agents
-        self.p = None
-
-        #   Camera and robot transformations
-        self.R_cam = np.array([[0.,  0., 1.],
-                               [-1., 0., 0.],
-                               [0., -1., 0.]])
-        self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
-
-        #   Publishers
-        qos = QoSProfile(depth=2)
-        self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}_{self.label}/cmd_vel",
-                                             qos)
-        self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}_{self.label}/enable",
-                                                qos)
-        # self.get_logger().info(f"control: /{self.robot_name}_{self.label}/cmd_vel")
-        #   Image bridge
-        img_qos = QoSProfile(depth=2)
-        self.bridge = CvBridge()
-        self.image_subscription = self.create_subscription(
-            Image, f"/{self.robot_name}_{self.label}/image",
-            self.image_recv,
-            img_qos)
-        self.image_pub = self.create_publisher(Image,
-                                                f"/{self.robot_name}_{self.label}/matching",
-                                               img_qos)
-
-        #   Subscriptions
-        self.pos_sub = self.create_subscription(Pose,
-                                                f"/{self.robot_name}_{self.label}/pose",
-                                                self.pos_changed,
-                                                qos)
-        self.state_sub = self.create_subscription(Int32,
-                                                  f"/state_{self.label}",
-                                                  self.state_changed,
-                                                  qos)
-
-        #   Network
-        #   TODO: graph
-        self.features_sub  = []
-        self.features_pub  = []
-        for i in self.out_neighbors:
-            _pub = self.create_publisher(Corners,
-                            f"/{self.robot_name}_{self.label}_{i}/ArUcos",
-                            qos)
-            self.features_pub.append(_pub)
-        for i in self.in_neighbors:
-            _sub = self.create_subscription(Corners,
-                            f"/{self.robot_name}_{i}_{self.label}/ArUcos",
-                            self.feature_receiver,
-                            qos)
-            self.features_sub.append(_sub)
-        
-        #   output files for data storage:
-        self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
-        with open(self.position_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.vel_d = os.path.join(self.output, f"velocities_{self.label}.dat")
-        with open(self.vel_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.norm_e_d = os.path.join(self.output, f"norm_error_{self.label}.dat")
-        with open(self.norm_e_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.arucos_d = os.path.join(self.output, f"arUcos_{self.label}.dat")
-        with open(self.arucos_d, 'w') as file:
-            pass  # 'w' mode clears the file's contents
-        self.error_d = [None]*self.n_agents
-        for j in self.in_neighbors:
-            self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
-            with open(self.error_d[j], 'w') as file:
-                pass  # 'w' mode clears the file's contents
-
-        if self.enable_log:
-            self.log_d = [None]*self.n_agents
-            for j in self.in_neighbors:
-                self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
-                with open(self.log_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-            if self.k_int != 0.:
-                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
-                with open(self.vel_log_d_0, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
-                with open(self.vel_log_d_1, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-
-        if self.k_int != 0.:
-            self.error_int_d = [None]*self.n_agents
-            for j in self.in_neighbors:
-                self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-                with open(self.error_int_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-
-        # output_filename = os.path.join(self.output, f"video_{self.label}.mp4")
-        # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use appropriate codec
-        # fps = int(self.frequency)
-        # self.frame_shape = (480, 856)
-        # self.video_writer = cv2.VideoWriter(output_filename, fourcc, fps, self.frame_shape)
-
+        #   Load references
+        enable_IBVS = self.config_reference()
 
         #   State
         self.state = IDLE
@@ -283,23 +185,124 @@ class Controller(Node):
         self.error = [None]*self.n_agents
         self._err_int = [None]*self.n_agents
         self.norm = -1.
-        if self.k_int != 0:
-            self.ids_int = [[] for i in range(self.n_agents)]
-            self.err_int = [[] for i in range(self.n_agents)]
-            # self.err_int = [np.array([[],[]])]*self.n_agents
-            self.control = self.control_int
-            self.tick = -1.
-            self.tock = -1.
 
+
+
+
+        if self.enable_log:
+            self.svd = [None]*self.n_agents
+            if  self.k_int != 0:
+                self.u_log = [np.zeros(6), np.zeros(6)]
+
+        #   Publishers
+        qos = QoSProfile(depth=2)
+        self.cmd_pub = self.create_publisher(Twist,
+                                             f"/{self.robot_name}_{self.label}/cmd_vel",
+                                             qos)
+        self.cmd_enable = self.create_publisher(Bool,
+                                                f"/{self.robot_name}_{self.label}/enable",
+                                                qos)
+
+        #   Subscriptions
+        self.pos_sub = self.create_subscription(Pose,
+                                                f"/{self.robot_name}_{self.label}/pose",
+                                                self.pos_changed,
+                                                qos)
+        self.state_sub = self.create_subscription(Int32,
+                                                  f"/state_{self.label}",
+                                                  self.state_changed,
+                                                  qos)
+
+
+
+        if enable_IBVS:
+
+            #   config control
+            if self.k_int != 0:
+                self.ids_int = [[] for i in range(self.n_agents)]
+                self.err_int = [[] for i in range(self.n_agents)]
+                # self.err_int = [np.array([[],[]])]*self.n_agents
+                self.tick = -1.
+                self.tock = -1.
+
+            #   Config data storage
+            self.config_data_storage()
+
+            #   Image bridge
+            self.features_sub  = []
+            self.features_pub  = []
+            img_qos = QoSProfile(depth=2)
+            self.bridge = CvBridge()
+            if len(self.aruco_dictionary) > 1:
+                self.image_subscription = self.create_subscription(
+                    Image, f"/{self.robot_name}_{self.label}/image",
+                    self.image_recv_arucos,
+                    img_qos)
+
+                for i in self.out_neighbors:
+                    _pub = self.create_publisher(Corners,
+                                    f"/{self.robot_name}_{self.label}_{i}/ArUcos",
+                                    qos)
+                    self.features_pub.append(_pub)
+                for i in self.in_neighbors:
+                    _sub = self.create_subscription(Corners,
+                                    f"/{self.robot_name}_{i}_{self.label}/ArUcos",
+                                    self.aruco_receiver,
+                                    qos)
+                    self.features_sub.append(_sub)
+
+            if len(self.tracker) > 1:
+                self.image_subscription = self.create_subscription(
+                    Image, f"/{self.robot_name}_{self.label}/image",
+                    self.image_recv_tracking,
+                    img_qos)
+                for i in self.out_neighbors:
+                    _pub = self.create_publisher(DeltaS,
+                                    f"/{self.robot_name}_{self.label}_{i}/desc",
+                                    qos)
+                    self.features_pub.append(_pub)
+                for i in self.in_neighbors:
+                    _sub = self.create_subscription(DeltaS,
+                                    f"/{self.robot_name}_{i}_{self.label}/desc",
+                                    self.delta_receiver,
+                                    qos)
+                    self.features_sub.append(_sub)
+            # INIT control loop
+            self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
         else:
-            self.control = self.control_p
-        self.svd = [None]*self.n_agents
+            self.timer = self.create_timer(1.0 / self.frequency, self.open_loop)
 
-        if self.enable_log and self.k_int != 0:
-            self.u_log = [np.zeros(6), np.zeros(6)]
+            # self.image_pub = self.create_publisher(Image,
+            #                                         f"/{self.robot_name}_{self.label}/matching",
+            #                                        img_qos)
 
-        # INIT control loop
-        self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+
+        # #   Camera and robot transformations
+        # self.R_cam = np.array([[0.,  0., 1.],
+        #                        [-1., 0., 0.],
+        #                        [0., -1., 0.]])
+        # self.t_cam = np.array([0.12, 0., 0.])   #   Different in real Bebop
+
+
+
+
+
+        #   Network
+        #   TODO: graph
+
+        
+
+
+        # output_filename = os.path.join(self.output, f"video_{self.label}.mp4")
+        # fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use appropriate codec
+        # fps = int(self.frequency)
+        # self.frame_shape = (480, 856)
+        # self.video_writer = cv2.VideoWriter(output_filename, fourcc, fps, self.frame_shape)
+
+
+
+
+
 
     def proc_paramaters(self):
 
@@ -319,6 +322,11 @@ class Controller(Node):
         self.declare_parameter('gain_takeoff', 1.)
         self.declare_parameter('K', [1.]*9)
         self.declare_parameter('L', [0])
+        self.declare_parameter('CamR', [1.]*9)
+        self.declare_parameter('CamT', [1.]*9)
+        self.declare_parameter('tracker', ["NAN"])
+        self.declare_parameter('tracker_vals', [0.])
+        self.declare_parameter('aruco_dictionary', "")
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
@@ -339,9 +347,24 @@ class Controller(Node):
         self.gain_takeoff = self.get_parameter('gain_takeoff').value
         self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
+        self.camR = self.get_parameter('CamR').value
+        self.camT = self.get_parameter('CamT').value
+        tracker = self.get_parameter('tracker').value
+        tracker_vals = self.get_parameter('tracker_vals').value
+        self.aruco_dictionary = self.get_parameter('aruco_dictionary').value
         self.initial_cond = self.get_parameter('p0').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
+
+        if not self.robot_name:
+            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
+            self.robot_name = 'bebop'
+        # self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
+
+        if tracker[0] == "NAN" :
+            self.tracker = {}
+        else:
+            self.tracker = {i:j for i, j in zip(tracker,tracker_vals)}
 
         # Convert parameters to a dictionary
         param_dict = {
@@ -372,6 +395,191 @@ class Controller(Node):
         with open(_name, 'w') as yaml_file:
             yaml.dump(param_dict, yaml_file)
 
+
+
+        #   inital conditions
+        #   TODO: simplify
+        self.initial_cond =  np.array(self.initial_cond)
+        self.initial_cond = self.initial_cond.reshape((-1,4))
+        self.initial_cond = self.initial_cond[self.label].reshape(-1)
+
+
+        #   Camera calibration data
+        self.f = [self.K[0], self.K[4]]
+        self.pPrinc = [self.K[2],self.K[5]]
+        self.K = np.array(self.K).reshape((3,3))
+        print(self.K)
+
+        #   Graph Laplacian
+        if len(self.L) != self.n_agents**2 :
+            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
+            self.L = np.ones((self.n_agents,self.n_agents)) - np.eye(self.n_agents)
+        else:
+            self.L = np.array(self.L).reshape((-1,self.n_agents))
+        _neighbors = self.L[self.label,:].tolist()
+        self.in_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
+        _neighbors = self.L[:,self.label].tolist()
+        self.out_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
+
+
+
+    def config_data_storage(self):
+
+        #   output files for data storage:
+        self.position_d = os.path.join(self.output, f"position_{self.label}.dat")
+        with open(self.position_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.vel_d = os.path.join(self.output, f"velocities_{self.label}.dat")
+        with open(self.vel_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.norm_e_d = os.path.join(self.output, f"norm_error_{self.label}.dat")
+        with open(self.norm_e_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
+        self.error_d = [None]*self.n_agents
+        for j in self.in_neighbors:
+            self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
+            with open(self.error_d[j], 'w') as file:
+                pass  # 'w' mode clears the file's contents
+
+        if len(self.aruco_dictionary) > 1 :
+            self.arucos_d = os.path.join(self.output, f"arUcos_{self.label}.dat")
+            with open(self.arucos_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        elif len(self.tracker) > 1 :
+            self.track_d = os.path.join(self.output, f"features_{self.label}.dat")
+            with open(self.track_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
+
+        if self.enable_log:
+            self.log_d = [None]*self.n_agents
+            for j in self.in_neighbors:
+                self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
+                with open(self.log_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+            if self.k_int != 0.:
+                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+                with open(self.vel_log_d_0, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+                with open(self.vel_log_d_1, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
+        if self.k_int != 0.:
+            self.error_int_d = [None]*self.n_agents
+            for j in self.in_neighbors:
+                self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
+                with open(self.error_int_d[j], 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
+    def config_reference(self):
+        #   Detector
+        if len(self.aruco_dictionary) > 1 :
+            if self.k_int == 0.:
+                self.control = self.control_p_arucos
+            else:
+                self.control = self.control_int_arucos
+            self.send_points = self.send_arucos
+            self.preproc_image = self.preproc_image_arucos
+            return self.config_aruco()
+
+        if len(self.tracker) > 1 :
+            self.control = self.control_p_tracking
+            self.send_points = self.send_desc
+            self.preproc_image = self.preproc_image_desc
+            return self.config_tracker()
+
+        self.get_logger().warning(f"No control configuration detected.")
+        return False
+
+    def config_aruco(self):
+        # TODO use makers
+        # markers = markers_list.index(self.aruco_dictionary)
+        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
+        parameters = cv2.aruco.DetectorParameters()
+        self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+
+        #   Reference image
+        self.ids_ref = [None]* self.n_agents
+        self._ids_ref = [None]* self.n_agents
+        self.points_ref = [None]* self.n_agents
+        self.corners_ref = [None]* self.n_agents
+        for i in range(self.n_agents):
+            image_ref = cv2.imread(f"{self.reference_image_prefix}_{i}.png")
+            if  image_ref is None :
+                self.get_logger().error(f"Image {self.reference_image_prefix}_{i}.png could not be read ")
+                return False
+            gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+
+            corners_ref, ids_ref, rejected = self.detector.detectMarkers(gray_image)
+            if ids_ref is None:
+                self.get_logger().error(f"No detected Markers")
+                return False
+            self.corners_ref[i] = corners_ref
+            _corners_ref = np.array( corners_ref)
+            _corners_ref = _corners_ref.astype(float).reshape((-1,2)).T
+            self.points_ref[i] = self.normalize(_corners_ref)
+            self._ids_ref[i]  = ids_ref
+            self.ids_ref[i]  = [ j[0] for j in  ids_ref.tolist()]
+            cv2.aruco.drawDetectedMarkers(image_ref, corners_ref, ids_ref,
+                                        borderColor = (100,1.,0.) )
+            _name = os.path.join(self.output, f"reference_proc_{self.label}_{i}.png")
+            cv2.imwrite(_name, image_ref)
+        self.ids = [None]*self.n_agents
+        self.points = [None]*self.n_agents
+        self.p = None
+        return True
+
+    def config_tracker(self):
+        self.orb = cv2.ORB_create(
+            nfeatures    = int( self.tracker["nfeatures"] ),
+            scaleFactor  = self.tracker["scaleFactor"],
+            nlevels      = int( self.tracker["nlevels"] ),
+            edgeThreshold= int( self.tracker["edgeThreshold"] ),
+            patchSize    = int( self.tracker["patchSize"] ),
+            fastThreshold= int( self.tracker["fastThreshold"] )
+            )
+
+        #   Matcher
+        index_params = {
+            "algorithm": 6,
+            "table_number": 20,
+            "key_size": 10,
+            "multi_probe_level": 2,
+        }
+
+        self.flann = cv2.FlannBasedMatcher(index_params)
+
+        self.lk_params = dict(winSize=(15, 15),
+                            maxLevel=2,
+                            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+        # self.ids_ref = [None]* self.n_agents
+        # self._ids_ref = [None]* self.n_agents
+        # self.points_ref = [None]* self.n_agents
+        # self.corners_ref = [None]* self.n_agents
+        # self.ids = [None]*self.n_agents
+        self.desc = [None]*self.n_agents
+        self.deltas = [None]*self.n_agents
+        # self.p = [None]*self.n_agents
+
+        image_ref = cv2.imread(f"{self.reference_image_prefix}_{self.label}.png")
+        if  image_ref is None :
+            self.get_logger().error(f"Image {self.reference_image_prefix}_{self.label}.png could not be read ")
+            return False
+        gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+        self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
+        if self.desc_ref is None:
+            self.get_logger().error(f"No detected Features ")
+            return False
+
+        self.prev_image = np.zeros((gray_image.shape),
+                                    dtype = gray_image.dtype)
+        self.p = np.zeros((2,2), dtype = np.float32)
+        self.ids = np.zeros((2,2), dtype = np.float32)
+        self.match_threshold = self.tracker["matcher_threshold"]
+
+
+
     def state_changed(self, msg):
         self.new_state = msg.data
         
@@ -386,7 +594,7 @@ class Controller(Node):
         _p[1,:] /= self.f[1]
         return _p
 
-    def image_recv(self, msg):
+    def image_recv_arucos(self, msg):
 
         # self.get_logger().info("Image received")
 
@@ -438,6 +646,99 @@ class Controller(Node):
         #                                 borderColor = (100,1.,0.) )
         #
         # self.image_pub.publish(self.bridge.cv2_to_imgmsg(_image, "bgr8"))
+
+    def image_recv_tracking(self, msg):
+
+        # self.get_logger().info("Image received")
+
+        try:
+            self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except CvBridgeError as e:
+            self.get_logger().error(f"Error converting image: {e}")
+        except KeyError as e:
+            self.get_logger().error(f"Robot name not found in topic: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Unexpected error: {e}")
+
+        gray_image = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
+
+        #   Tracking
+        # print(self.p)
+        new_pts, status, err = cv2.calcOpticalFlowPyrLK(
+            self.prev_image, gray_image,
+            self.p, None,
+            **self.lk_params)
+        self.prev_image = gray_image.copy()
+
+        # print(status)
+        status = status.reshape(-1)
+        # self.get_logger().info(new_pts)
+        self.p = new_pts[status == 1]
+        self.ids = self.ids[status == 1]
+        self.desc_masked = self.desc_masked[status == 1]
+
+        # If we have enough tracked points, find their matches in reference image
+        if self.p.shape[0] >= self.match_threshold:
+
+            _p_ref = np.float32([
+                self.kp_ref[i].pt
+                for i in self.ids
+            ])
+
+
+        else:
+            # Extract Matches if not enough
+            kp, desc = self.orb.detectAndCompute(gray_image, None)
+            knn_matches = self.flann.knnMatch(desc, self.desc_ref, k=2)
+            self.desc_masked = self.desc_ref.copy()
+
+            # Lowe ratio test
+            good_matches = []
+            for matches in knn_matches:
+                if len(matches) == 2:
+                    m, n = matches
+                    if m.distance < self.tracker["flann_ratio"] * n.distance:
+                        good_matches.append(m)
+
+            # print(good_matches)
+
+            if len(good_matches) <= 2 :
+                if not self.lost_features:
+                    self.get_logger().warning("No Matches available")
+                    self.lost_features = True
+                self.prev_image = np.zeros((gray_image.shape),
+                                           dtype = gray_image.dtype)
+                self.p = np.zeros((2,2), dtype = np.float32)
+                self.ids = np.zeros(2, dtype = np.int8)
+                self.points = None
+                self.points_ref = None
+                return
+            if self.lost_features:
+                self.get_logger().warning("Matches available")
+                self.lost_features = False
+
+            # Matching coordinates as NumPy arrays
+            self.p = np.float32([
+                kp[m.queryIdx].pt
+                for m in good_matches
+            ])
+
+            _p_ref = np.float32([
+                self.kp_ref[m.trainIdx].pt
+                for m in good_matches
+            ])
+
+            self.ids = np.array([m.trainIdx for m in good_matches],
+                                dtype = np.int8)
+
+        # print(self.p)
+        # print(_p_ref)
+
+        #   Normalize
+        self.points = self.normalize(self.p.astype(float).T)
+        self.points_ref = self.normalize(_p_ref.astype(float).T)
+
+        self.deltas_self = self.points - self.points_ref
 
     def save_data(self):
 
@@ -526,7 +827,7 @@ class Controller(Node):
                 binary = struct.pack('ddddd', *data)
                 f.write(binary)
 
-    def feature_receiver(self, msg):
+    def aruco_receiver(self, msg):
 
         #   TODO: include depth
 
@@ -550,6 +851,23 @@ class Controller(Node):
         _points = np.array(_points)
         _points = _points.reshape((-1,2)).astype(float).T
         self.points[j] = self.normalize(_points)
+
+    def delta_receiver(self, msg):
+
+        #   TODO: include depth
+
+        j = msg.j
+        _depth = msg.depth
+
+        _desc = np.array(msg.desc.data, dtype= np.int8 )
+        _desc = _desc.reshape((msg.desc.rows, msg.desc.cols))
+
+        _deltas = np.array(msg.deltas.data, dtype= np.float32 )
+        _deltas = _deltas.reshape((msg.deltas.rows, msg.deltas.cols))
+
+        self.desc[j] = _desc
+        self.deltas[j] = _deltas
+
 
     def get_mathing(self, j):
 
@@ -587,7 +905,7 @@ class Controller(Node):
 
         return _query, match_1, match_2, match_3, match_4
 
-    def control_p(self, _image = None):
+    def control_p_arucos(self, _image = None):
         for j in self.in_neighbors:
             if not  self.points[j] is None:
 
@@ -702,7 +1020,7 @@ class Controller(Node):
     #             self.ids_int[j].append(q)
     #             self.err_int[j] = np.concatenate((self.err_int[j], _err), axis = 1 )
 
-    def control_int(self, _image = None):
+    def control_int_arucos(self, _image = None):
 
         if self.enable_log :
             self.u_log = [np.zeros(6), np.zeros(6)]
@@ -778,8 +1096,212 @@ class Controller(Node):
 
         return _image
 
-    def control_loop(self):
+    def control_p_tracking(self, _image = None):
+        for j in self.in_neighbors:
+            if self.deltas[j] is None:
+                continue
 
+            #   match
+            knn_matches = self.flann.knnMatch(self.desc[j],
+                                              self.desc_masked, k=2)
+            # Lowe ratio test
+            good_matches = []
+            for matches in knn_matches:
+                if len(matches) == 2:
+                    m, n = matches
+                    if m.distance < self.tracker["flann_ratio"] * n.distance:
+                        good_matches.append(m)
+
+            if len(good_matches) <= 2:
+                self.get_logger().warning("No Neighboring Matches available")
+                continue
+
+            _p_i = np.float32([
+                self.points[:,m.trainIdx]
+                for m in good_matches
+            ]).T
+            _pr_i = np.float32([
+                self.points_ref[:,m.trainIdx]
+                for m in good_matches
+            ]).T
+
+            _delta_i = np.float32([
+                self.deltas[j][:,m.queryIdx]
+                for m in good_matches
+            ]).T
+            _delta_j = np.float32([
+                self.deltas_self[:,m.trainIdx]
+                for m in good_matches
+            ]).T
+
+            # complement = _pr_i + _delta_j
+            # self.error[j] = _delta_i - _delta_j
+            self.error[j] = _delta_i # For TEST
+            # self.L = interaction_matrix_xyz(complement, self.img_depth)
+            self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
+            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+            L_inv = Inv_Moore_Penrose(self.L)
+
+            if self.enable_log:
+                _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+            if L_inv is None:
+                self.get_logger().error("Invalid Ls matrix")
+                continue
+
+            self._u += - self.gain * L_inv @ self.error[j].T.reshape(-1)
+
+            # TODO image draw
+            # if not _image is None:
+            #     complement[0,:] = complement[0,:]*self.f[0] + self.pPrinc[0]
+            #     complement[1,:] = complement[1,:]*self.f[1] + self.pPrinc[1]
+            #     complement = complement.T.reshape((len(ids), 4,2)).astype(float)
+            #     complement = tuple(complement[i].reshape((1,4,2)) for i in range(len(ids)))
+            #     view_ids = np.array(ids)
+            #     cv2.aruco.drawDetectedMarkers(_image,
+            #                 complement,
+            #                 view_ids,
+            #                 borderColor = (50,1.,0.) )
+
+        #   6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return _image
+
+    def open_loop(self):
+
+
+
+        if self.state == IDLE:
+            #   Change state
+            if self.new_state == TAKEOFF:
+                self.get_logger().info("State change: TAKEOFF")
+                self.state = TAKEOFF
+                self.takeoff_complete = False
+            if self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
+        elif self.state == TAKEOFF:
+            current_z = self.current_pose.position.z
+            delta = current_z- self.takeoff_height
+
+            if abs(delta) < self.takeoff_threshold and not self.takeoff_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
+                self.takeoff_complete = True
+
+            msg = Twist()
+            msg.linear.z = -self.gain_takeoff*float(delta)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {msg.linear.z}")
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
+
+        elif self.state == INITCOND:
+            _my_position = [self.current_pose.position.x,
+                           self.current_pose.position.y,
+                           self.current_pose.position.z]
+            my_position = np.array(_my_position)
+            _orientation = [self.current_pose.orientation.x,
+                            self.current_pose.orientation.y,
+                            self.current_pose.orientation.z,
+                            self.current_pose.orientation.w]
+
+            _delta = my_position- self.initial_cond[:3]
+            if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Initial condition reached")
+                self.init_complete = True
+
+            msg = Twist()
+            _u = -self.gain_takeoff * _delta
+            _R = quaternion_matrix(_orientation)
+            _R = _R[:3,:]
+            _R = _R[:,:3]
+            _u = _R.T @ _u
+
+            _, _, _yaw = euler_from_matrix(_R)
+
+            _yaw = _yaw - self.initial_cond[3]
+            _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+            _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+            msg.linear.x = float(_u[0])
+            msg.linear.y = float(_u[1])
+            msg.linear.z = float(_u[2])
+            msg.angular.z = float(-self.gain_takeoff* _yaw)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {_u}")
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+        elif self.state == LANDING:
+
+            current_z = self.current_pose.position.z
+            msg = Twist()
+
+            if current_z > self.landing_threshold:
+                # Descender controladamente
+                msg.linear.z = self.gain_takeoff* float(- current_z)
+                self.cmd_pub.publish(msg)
+            else:
+                #   Landing finished
+                self.get_logger().info("¡Landing complete!")
+                self.state = IDLE
+                self.enable = False
+                self.cmd_enable.publish(Bool(data=self.enable))
+                self.cmd_pub.publish(Twist())
+
+            #   Change state
+            if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
+                self.get_logger().info("State change: IDLE")
+                self.state = IDLE
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+
+
+        elif self.state == STOP:
+            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(Twist())
+            self.enable = False
+            self.cmd_enable.publish(Bool(data=self.enable))
+            self.get_logger().info("State change: IDLE")
+            self.state = IDLE
+
+    def send_arucos(self):
         if not self.p is None:
 
             msg = Corners()
@@ -803,19 +1325,61 @@ class Controller(Node):
             for i in range(len(self.features_pub)):
                 self.features_pub[i].publish(msg)
 
-        _image = None
-        if not self.cv_image is None:
-            #   Publish detection
-            _image = self.cv_image.copy()
-            # print(ids)
-            cv2.aruco.drawDetectedMarkers(_image, self.view_corners, self.view_ids,
-                                            borderColor = (0,100,0.) )
-            cv2.aruco.drawDetectedMarkers(_image, self.corners_ref[self.label],
-                                          self._ids_ref[self.label],
-                                            borderColor = (0,0., 100.) )
+    def send_desc(self):
+        if not self.desc is None:
 
+            msg = DeltaS()
+            msg.j = int(self.label)
+            msg.depth = float(1.)
+            # _msg = []
 
+            msg.desc.rows = int(self.desc_masked.shape[0])
+            msg.desc.cols = int(self.desc_masked.shape[1])
+            msg.desc.data = self.desc_masked.ravel().tolist()
 
+            msg.deltas.rows = int(self.deltas_self.shape[0])
+            msg.deltas.cols = int(self.deltas_self.shape[1])
+            msg.deltas.data = self.deltas_self.ravel().tolist()
+
+            for i in range(len(self.features_pub)):
+                self.features_pub[i].publish(msg)
+
+    def preproc_image_arucos(self):
+        if self.cv_image is None:
+            return None
+
+        #   Publish detection
+        _image = self.cv_image.copy()
+        # print(ids)
+        cv2.aruco.drawDetectedMarkers(_image,
+                        self.view_corners,
+                        self.view_ids,
+                        borderColor = (0,100,0.) )
+        cv2.aruco.drawDetectedMarkers(_image,
+                        self.corners_ref[self.label],
+                        self._ids_ref[self.label],
+                        borderColor = (0,0., 100.) )
+        return _image
+
+    def preproc_image_desc(self):
+        if  self.cv_image is None:
+            return None
+
+        #   Publish detection
+        match_image = custom_draw_matching(
+            self.cv_image,
+            self.image_ref,
+            self.p,
+            _p_ref)
+
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
+
+        return _image
+
+    def control_loop(self):
+
+        self.send_points()
+        _image = self.preproc_image()
 
         if self.state == IDLE:
             #   Change state
