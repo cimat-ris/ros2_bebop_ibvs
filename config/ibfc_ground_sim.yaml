@@ -1,19 +1,19 @@
 K:   [375.98849,  0.   ,428.,
       0.     ,375.98849,240.,
       0.     ,  0.   ,  1.   ]
-# Reference 1
-# p0: [2., -1.,2., 1.55,
-#      1., -1.,2., 1.55,
-#      2., -1.,1., 1.55,
-#      1., -1.,1., 1.55]
-pd: [2., -1.,2., 1.55,
-     1., -1.,2., 1.55,
-     2., -1.,1., 1.55,
-     1., -1.,1., 1.55]
-p0: [2., -2.,2., 1.22,
-     2., -2.,1., 1.5,
-     1., -0.,1.5, 1.5,
-     1., -1.,1., 1.22]
+CamR: [0.,-1., 0.,
+      -1., 0., 0.,
+       0., 0.,-1.]
+CamT: [0., 0., -0.05]
+
+pd: [0., -1.,2., 0,
+     1., -1.,2., 0,
+     0.,  1.,2., 0,
+     1.,  1.,2., 0]
+p0: [0., -1.,2., 0.22,
+     1.5, -1.,1.5, 0.5,
+     0.,  0.,2.5, -0.5,
+     1.,  0.,2., -0.22]
 n_agents: 4
 
 L: [0, 1, 1, 1,
@@ -27,10 +27,10 @@ takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
 gain_takeoff: .3
-ref_prefix: "reference_f"
+ref_prefix: "reference_ground"
 
 polar: false
-gain: .04
+gain: .01
 gain_w: 1.
 img_depth: 2.
 
@@ -51,7 +51,7 @@ tracker_vals: [ 100,
                 0.7,
                 12]
 
-save_log: true
+save_log: false
 # output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output/proporcional_06
 # output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output/integral_07
 output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output/

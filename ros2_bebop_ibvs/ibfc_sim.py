@@ -26,6 +26,7 @@ LANDING = 3
 STOP = 4
 INITCOND = 5
 REFERENCE = 6
+RESET_TRACKING = 7
 
 markers_list = ["4X4_50" ,
         "4X4_100" ,
@@ -165,9 +166,6 @@ class Controller(Node):
         #   Save data
         self.proc_paramaters()
 
-        #   Logger
-        self.get_logger().info(f"{self.label}_ki  = {self.k_int}")
-
         #   Load references
         enable_IBVS = self.config_reference()
 
@@ -186,8 +184,9 @@ class Controller(Node):
         self.error = [None]*self.n_agents
         self._err_int = [None]*self.n_agents
         self.norm = -1.
-
-
+        self.deltas_self = None
+        self.lost_features = False
+        self.reset_flag = False
 
 
         if self.enable_log:
@@ -215,7 +214,6 @@ class Controller(Node):
                                                   qos)
 
 
-        print("Enable IBVS: ",enable_IBVS)
         if enable_IBVS:
 
             #   config control
@@ -270,12 +268,13 @@ class Controller(Node):
                     self.features_sub.append(_sub)
             # INIT control loop
             self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+            self.image_pub = self.create_publisher(Image,
+                                                    f"/{self.robot_name}_{self.label}/matching",
+                                                   img_qos)
         else:
+            self.get_logger().warning(f"{self.label}: Control configuration incomplete, simple control enabled")
             self.timer = self.create_timer(1.0 / self.frequency, self.open_loop)
 
-            # self.image_pub = self.create_publisher(Image,
-            #                                         f"/{self.robot_name}_{self.label}/matching",
-            #                                        img_qos)
 
 
         # #   Camera and robot transformations
@@ -415,7 +414,8 @@ class Controller(Node):
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
-        print(self.K)
+        self.R_cam = np.array(self.camR).reshape((3,3))
+        self.t_cam = np.array(self.camT)
 
         #   Graph Laplacian
         if len(self.L) != self.n_agents**2 :
@@ -453,8 +453,8 @@ class Controller(Node):
             with open(self.arucos_d, 'w') as file:
                 pass  # 'w' mode clears the file's contents
         elif len(self.tracker) > 1 :
-            self.track_d = os.path.join(self.output, f"features_{self.label}.dat")
-            with open(self.track_d, 'w') as file:
+            self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
+            with open(self.features_d, 'w') as file:
                 pass  # 'w' mode clears the file's contents
 
         if self.enable_log:
@@ -487,12 +487,14 @@ class Controller(Node):
                 self.control = self.control_int_arucos
             self.send_points = self.send_arucos
             self.preproc_image = self.preproc_image_arucos
+            self.save_data = self.save_arucos
             return self.config_aruco()
 
         if len(self.tracker) > 1 :
             self.control = self.control_p_tracking
             self.send_points = self.send_desc
             self.preproc_image = self.preproc_image_desc
+            self.save_data = self.save_tracking
             return self.config_tracker()
 
         self.get_logger().warning(f"No control configuration detected.")
@@ -568,26 +570,34 @@ class Controller(Node):
         self.desc = [None]*self.n_agents
         self.deltas = [None]*self.n_agents
         # self.p = [None]*self.n_agents
-
-        image_ref = cv2.imread(f"{self.reference_image_prefix}_{self.label}.png")
-        if  image_ref is None :
+        self.get_logger().info(f"{self.label}: Reading Image")
+        self.image_ref = cv2.imread(f"{self.reference_image_prefix}_{self.label}.png")
+        if  self.image_ref is None :
             self.get_logger().error(f"Image {self.reference_image_prefix}_{self.label}.png could not be read ")
             return False
-        gray_image = cv2.cvtColor(image_ref, cv2.COLOR_BGR2GRAY)
+        gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
         self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
         if self.desc_ref is None:
             self.get_logger().error(f"No detected Features ")
             return False
 
+        self.get_logger().info(str(self.desc_ref.shape))
+
         self.prev_image = np.zeros((gray_image.shape),
                                     dtype = gray_image.dtype)
         self.p = np.zeros((2,2), dtype = np.float32)
-        self.ids = np.zeros((2,2), dtype = np.float32)
+        self.deltas_self = np.zeros((2,2), dtype = np.float32)
+        self.ids = np.zeros(2, dtype = np.float32)
+        self.desc_masked = np.zeros((2,2), dtype = np.int8)
         self.match_threshold = self.tracker["matcher_threshold"]
 
 
+        return True
 
     def state_changed(self, msg):
+        if msg.data == RESET_TRACKING:
+            self.reset_flag = True
+            return
         self.new_state = msg.data
         
     def pos_changed(self, msg):
@@ -685,9 +695,9 @@ class Controller(Node):
         self.desc_masked = self.desc_masked[status == 1]
 
         # If we have enough tracked points, find their matches in reference image
-        if self.p.shape[0] >= self.match_threshold:
+        if self.p.shape[0] >= self.match_threshold and not self.reset_flag:
 
-            _p_ref = np.float32([
+            self._p_ref = np.float32([
                 self.kp_ref[i].pt
                 for i in self.ids
             ])
@@ -717,8 +727,10 @@ class Controller(Node):
                                            dtype = gray_image.dtype)
                 self.p = np.zeros((2,2), dtype = np.float32)
                 self.ids = np.zeros(2, dtype = np.int8)
+                self.desc_masked = np.zeros((2,2), dtype = np.int8)
                 self.points = None
                 self.points_ref = None
+                self.deltas_self = None
                 return
             if self.lost_features:
                 self.get_logger().warning("Matches available")
@@ -730,24 +742,88 @@ class Controller(Node):
                 for m in good_matches
             ])
 
-            _p_ref = np.float32([
+            self._p_ref = np.float32([
                 self.kp_ref[m.trainIdx].pt
                 for m in good_matches
             ])
 
             self.ids = np.array([m.trainIdx for m in good_matches],
                                 dtype = np.int8)
+            self.desc_masked = self.desc_masked[self.ids]
 
         # print(self.p)
         # print(_p_ref)
 
         #   Normalize
         self.points = self.normalize(self.p.astype(float).T)
-        self.points_ref = self.normalize(_p_ref.astype(float).T)
+        self.points_ref = self.normalize(self._p_ref.astype(float).T)
 
         self.deltas_self = self.points - self.points_ref
 
-    def save_data(self):
+    def save_tracking(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        orientation_q = self.current_pose.orientation
+        ang = get_yaw(orientation_q)
+        with open(self.position_d, 'ab') as f:
+            data = (t, self.current_pose.position.x,
+                    self.current_pose.position.y,
+                    self.current_pose.position.z,
+                    ang)
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        with open(self.vel_d, 'ab') as f:
+            data = (t,) + tuple(self.u[[0,1,2,5]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        if self.norm >= .0:
+            with open(self.norm_e_d, 'ab') as f:
+                data = (t,self.norm)
+                binary = struct.pack('dd', *data)
+                f.write(binary)
+
+        if not self.deltas is None:
+
+            with open(self.features_d, 'ab') as f:
+                for i, m in enumerate(self.ids):
+
+                    data = (t, m)
+                    data += tuple(self.p[i, :].reshape(-1))
+                    binary = struct.pack('didd', *data)
+                    f.write(binary)
+
+            # for j in self.in_neighbors:
+            #     with open(self.error_d[j], 'ab') as f:
+            #         for i in range(len(self.ids[j])):
+            #
+            #             data = (t, self.ids[j][i])
+            #             data += tuple(self.error[j][:,4*i:4*(i+1)].T.reshape(-1))
+            #             diff = 10 - len(data)
+            #             if diff !=0:
+            #                 data += tuple(np.zeros(diff))
+            #             binary = struct.pack('didddddddd', *data)
+            #             f.write(binary)
+
+
+        # save log
+        # if not self.enable_log:
+        #     return
+        # for j in self.in_neighbors:
+        #     with open(self.log_d[j], 'ab') as f:
+        #         data = (t,)
+        #         # data += tuple(self.L.reshape(-1))
+        #         data += tuple(self.svd[j].reshape(-1))
+        #         # binary = struct.pack('d'*(1+8*6+6), *data) ## 6 dof y un aruco
+        #         binary = struct.pack('d'*(1+6), *data) ## 6 dof only singular values
+        #         # binary = struct.pack('d'*(1+8*4+4), *data) ## 4 dof
+        #         f.write(binary)
+
+
+    def save_arucos(self):
 
         t = self.get_clock().now().nanoseconds * 1e-9
         orientation_q = self.current_pose.orientation
@@ -866,7 +942,7 @@ class Controller(Node):
         j = msg.j
         _depth = msg.depth
 
-        _desc = np.array(msg.desc.data, dtype= np.int8 )
+        _desc = np.array(msg.desc.data, dtype= self.desc_ref.dtype )
         _desc = _desc.reshape((msg.desc.rows, msg.desc.cols))
 
         _deltas = np.array(msg.deltas.data, dtype= np.float32 )
@@ -1133,20 +1209,27 @@ class Controller(Node):
             ]).T
 
             _delta_i = np.float32([
-                self.deltas[j][:,m.queryIdx]
+                self.deltas_self[:,m.trainIdx]
                 for m in good_matches
             ]).T
             _delta_j = np.float32([
-                self.deltas_self[:,m.trainIdx]
+                self.deltas[j][:,m.queryIdx]
                 for m in good_matches
             ]).T
 
             # complement = _pr_i + _delta_j
             # self.error[j] = _delta_i - _delta_j
-            self.error[j] = _delta_i # For TEST
+            # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
             # self.L = interaction_matrix_xyz(complement, self.img_depth)
-            self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+
+            #   BEGIN TEST
+            # self.error[j] = _delta_i
+            # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
+            self.error[j] = self.deltas_self
+            self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+            #   END TEST
+
             L_inv = Inv_Moore_Penrose(self.L)
 
             if self.enable_log:
@@ -1279,6 +1362,10 @@ class Controller(Node):
             elif self.new_state == STOP:
                 self.get_logger().info("State change: STOP")
                 self.state = STOP
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
+                self.init_complete = False
 
         elif self.state == REFERENCE:
             _my_position = [self.current_pose.position.x,
@@ -1323,6 +1410,10 @@ class Controller(Node):
             elif self.new_state == STOP:
                 self.get_logger().info("State change: STOP")
                 self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
 
         elif self.state == LANDING:
 
@@ -1385,23 +1476,26 @@ class Controller(Node):
                 self.features_pub[i].publish(msg)
 
     def send_desc(self):
-        if not self.desc is None:
+        if self.desc_masked.shape[0] < 3:
+            return
+        if self.deltas_self is None:
+            return
 
-            msg = DeltaS()
-            msg.j = int(self.label)
-            msg.depth = float(1.)
-            # _msg = []
+        msg = DeltaS()
+        msg.j = int(self.label)
+        msg.depth = float(1.)
+        # _msg = []
 
-            msg.desc.rows = int(self.desc_masked.shape[0])
-            msg.desc.cols = int(self.desc_masked.shape[1])
-            msg.desc.data = self.desc_masked.ravel().tolist()
+        msg.desc.rows = int(self.desc_masked.shape[0])
+        msg.desc.cols = int(self.desc_masked.shape[1])
+        msg.desc.data = self.desc_masked.ravel().tolist()
 
-            msg.deltas.rows = int(self.deltas_self.shape[0])
-            msg.deltas.cols = int(self.deltas_self.shape[1])
-            msg.deltas.data = self.deltas_self.ravel().tolist()
+        msg.deltas.rows = int(self.deltas_self.shape[0])
+        msg.deltas.cols = int(self.deltas_self.shape[1])
+        msg.deltas.data = self.deltas_self.ravel().tolist()
 
-            for i in range(len(self.features_pub)):
-                self.features_pub[i].publish(msg)
+        for i in range(len(self.features_pub)):
+            self.features_pub[i].publish(msg)
 
     def preproc_image_arucos(self):
         if self.cv_image is None:
@@ -1425,13 +1519,14 @@ class Controller(Node):
             return None
 
         #   Publish detection
-        match_image = custom_draw_matching(
+        if self.p.shape[0] < self.match_threshold:
+            return None
+
+        _image = custom_draw_matching(
             self.cv_image,
             self.image_ref,
             self.p,
-            _p_ref)
-
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(match_image, "bgr8"))
+            self._p_ref)
 
         return _image
 
@@ -1540,6 +1635,10 @@ class Controller(Node):
             elif self.new_state == STOP:
                 self.get_logger().info("State change: STOP")
                 self.state = STOP
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
+                self.init_complete = False
 
         elif self.state == REFERENCE:
             _my_position = [self.current_pose.position.x,
@@ -1590,6 +1689,10 @@ class Controller(Node):
             elif self.new_state == STOP:
                 self.get_logger().info("State change: STOP")
                 self.state = STOP
+            elif self.new_state == INITCOND:
+                self.get_logger().info("State change: INITCOND")
+                self.state = INITCOND
+                self.init_complete = False
 
         elif self.state == LANDING:
 
@@ -1660,6 +1763,8 @@ class Controller(Node):
 
             _norm = 0.
             for j in self.in_neighbors:
+                if self.error[j] is None:
+                    continue
                 _v = self.error[j].reshape(-1)
                 _norm += np.dot(_v,_v)
             self.norm = np.sqrt(_norm)

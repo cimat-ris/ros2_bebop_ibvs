@@ -149,6 +149,8 @@ ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
 ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
 ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
 ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 7}"  #  Tracking reset
 ```
 
 For simplicity the following aliases can be defined
@@ -158,7 +160,8 @@ alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
 alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
-alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  #  Reset tracking points
+alias ref="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  REFERENCE CONDITION
+alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 7}\" --once" #  #  Reset tracking points
 
 ```
 
@@ -168,6 +171,7 @@ alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  #  
 ```bash
 # screen 1
 ros2 launch   ros2_bebop_ibvs multiple_bebop1_ibfc_sim.launch.py
+ros2 launch   ros2_bebop_ibvs multiple_bebop1_ground_ibfc_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
@@ -176,6 +180,8 @@ ros2 topic pub --once  /state std_msgs/Int32 "{data: 3}"  #  LAND
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 1}"  #  IBVS
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 4}"  #  STOP
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 5}"  #  INITAL CONDITION
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 7}"  #  Tracking reset
 ```
 
 For simplicity the following aliases can be defined
@@ -185,6 +191,8 @@ alias land="ros2 topic pub --once /state std_msgs/Int32 \"{data: 3}\" " #  LAND
 alias ibvs="ros2 topic pub --once /state std_msgs/Int32 \"{data: 1}\" " #  IBFC
 alias stop="ros2 topic pub --once /state std_msgs/Int32 \"{data: 4}\" " #  STOP
 alias init="ros2 topic pub --once /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
+alias ref="ros2 topic pub --once /state std_msgs/Int32 \"{data: 6}\" " #  REFERENCE CONDITION
+alias trackr="ros2 topic pub --once /state std_msgs/Int32 \"{data: 7}\" " #  REFERENCE CONDITION
 ```
 
 
