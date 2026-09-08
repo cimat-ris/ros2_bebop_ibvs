@@ -25,6 +25,7 @@ TAKEOFF = 2
 LANDING = 3
 STOP = 4
 INITCOND = 5
+REFERENCE = 6
 
 markers_list = ["4X4_50" ,
         "4X4_100" ,
@@ -214,7 +215,7 @@ class Controller(Node):
                                                   qos)
 
 
-
+        print("Enable IBVS: ",enable_IBVS)
         if enable_IBVS:
 
             #   config control
@@ -328,6 +329,7 @@ class Controller(Node):
         self.declare_parameter('tracker_vals', [0.])
         self.declare_parameter('aruco_dictionary', "")
         self.declare_parameter('p0', [1.]*4)
+        self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
 
@@ -353,6 +355,7 @@ class Controller(Node):
         tracker_vals = self.get_parameter('tracker_vals').value
         self.aruco_dictionary = self.get_parameter('aruco_dictionary').value
         self.initial_cond = self.get_parameter('p0').value
+        self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
 
@@ -385,6 +388,7 @@ class Controller(Node):
             "K" : self.K,
             "L" : self.L,
             "initial_cond" : self.initial_cond,
+            "reperence_pose" : self.reference_pose,
             "enable_polar" : self.enable_polar,
             "enable_log" : self.enable_log,
             }
@@ -402,6 +406,9 @@ class Controller(Node):
         self.initial_cond =  np.array(self.initial_cond)
         self.initial_cond = self.initial_cond.reshape((-1,4))
         self.initial_cond = self.initial_cond[self.label].reshape(-1)
+        self.reference_pose =  np.array(self.reference_pose)
+        self.reference_pose = self.reference_pose.reshape((-1,4))
+        self.reference_pose = self.reference_pose[self.label].reshape(-1)
 
 
         #   Camera calibration data
@@ -1194,6 +1201,10 @@ class Controller(Node):
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
                 self.init_complete = False
+            if self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
+                self.init_complete = False
 
         elif self.state == TAKEOFF:
             current_z = self.current_pose.position.z
@@ -1219,6 +1230,10 @@ class Controller(Node):
             elif self.new_state == INITCOND:
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
+                self.init_complete = False
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
                 self.init_complete = False
 
         elif self.state == INITCOND:
@@ -1247,6 +1262,50 @@ class Controller(Node):
             _, _, _yaw = euler_from_matrix(_R)
 
             _yaw = _yaw - self.initial_cond[3]
+            _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+            _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+            msg.linear.x = float(_u[0])
+            msg.linear.y = float(_u[1])
+            msg.linear.z = float(_u[2])
+            msg.angular.z = float(-self.gain_takeoff* _yaw)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {_u}")
+            #   Change state
+            if self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+        elif self.state == REFERENCE:
+            _my_position = [self.current_pose.position.x,
+                           self.current_pose.position.y,
+                           self.current_pose.position.z]
+            my_position = np.array(_my_position)
+            _orientation = [self.current_pose.orientation.x,
+                            self.current_pose.orientation.y,
+                            self.current_pose.orientation.z,
+                            self.current_pose.orientation.w]
+
+            _delta = my_position- self.reference_pose[:3]
+            if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Initial condition reached")
+                self.init_complete = True
+
+            msg = Twist()
+            _u = -self.gain_takeoff * _delta
+            _R = quaternion_matrix(_orientation)
+            _R = _R[:3,:]
+            _R = _R[:,:3]
+            _u = _R.T @ _u
+
+            _, _, _yaw = euler_from_matrix(_R)
+
+            _yaw = _yaw - self.reference_pose[3]
             _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
             _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
 
@@ -1391,6 +1450,10 @@ class Controller(Node):
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
                 self.init_complete = False
+            if self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
+                self.init_complete = False
 
         elif self.state == TAKEOFF:
             current_z = self.current_pose.position.z
@@ -1422,6 +1485,10 @@ class Controller(Node):
             elif self.new_state == INITCOND:
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
+                self.init_complete = False
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
                 self.init_complete = False
 
         elif self.state == INITCOND:
@@ -1467,6 +1534,56 @@ class Controller(Node):
             elif self.new_state == IBFC and  not self.init_complete:
                 self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to IBFC")
                 self.new_state = INITCOND
+            elif self.new_state == LANDING:
+                self.get_logger().info("State change: LANDING")
+                self.state = LANDING
+            elif self.new_state == STOP:
+                self.get_logger().info("State change: STOP")
+                self.state = STOP
+
+        elif self.state == REFERENCE:
+            _my_position = [self.current_pose.position.x,
+                           self.current_pose.position.y,
+                           self.current_pose.position.z]
+            my_position = np.array(_my_position)
+            _orientation = [self.current_pose.orientation.x,
+                            self.current_pose.orientation.y,
+                            self.current_pose.orientation.z,
+                            self.current_pose.orientation.w]
+
+            _delta = my_position- self.reference_pose[:3]
+            if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+                #   Proportional control iniside takeoff_threshold
+                self.get_logger().info(f"Initial condition reached")
+                self.init_complete = True
+
+            msg = Twist()
+            _u = -self.gain_takeoff * _delta
+            _R = quaternion_matrix(_orientation)
+            _R = _R[:3,:]
+            _R = _R[:,:3]
+            _u = _R.T @ _u
+
+            _, _, _yaw = euler_from_matrix(_R)
+
+            _yaw = _yaw - self.reference_pose[3]
+            _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+            _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+            msg.linear.x = float(_u[0])
+            msg.linear.y = float(_u[1])
+            msg.linear.z = float(_u[2])
+            msg.angular.z = float(-self.gain_takeoff* _yaw)
+            self.cmd_pub.publish(msg)
+
+            self.get_logger().debug(f"Control input: {_u}")
+            #   Change state
+            if self.new_state == IBFC and self.init_complete:
+                self.get_logger().info("State change: IBFC")
+                self.state = IBFC
+            elif self.new_state == IBFC and  not self.init_complete:
+                self.get_logger().info("Waiting for REFERENCE CONDITION to finish, can not change to IBFC")
+                self.new_state = REFERENCE
             elif self.new_state == LANDING:
                 self.get_logger().info("State change: LANDING")
                 self.state = LANDING
@@ -1525,6 +1642,10 @@ class Controller(Node):
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
                 self.init_complete = False
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
+                self.init_complete = False
 
         elif self.state == IBFC:
 
@@ -1568,6 +1689,10 @@ class Controller(Node):
             elif self.new_state == INITCOND:
                 self.get_logger().info("State change: INITCOND")
                 self.state = INITCOND
+                self.init_complete = False
+            elif self.new_state == REFERENCE:
+                self.get_logger().info("State change: REFERENCE")
+                self.state = REFERENCE
                 self.init_complete = False
 
         elif self.state == STOP:

@@ -59,15 +59,15 @@ def generate_launch_description():
             }],
         )
         bridge.append(ros_gz_bridge)
-
-        # Launch image bridge
-        ros_img_bridge = Node(
-             package='ros_gz_image',
-            executable='image_bridge',
-            arguments=[f"/parrot_bebop_2_{i}/image"],
-            output='screen',
-        )
-        bridge.append(ros_img_bridge)
+        #
+        # # Launch image bridge
+        # ros_img_bridge = Node(
+        #      package='ros_gz_image',
+        #     executable='image_bridge',
+        #     arguments=[f"/parrot_bebop_2_{i}/image"],
+        #     output='screen',
+        # )
+        # bridge.append(ros_img_bridge)
 
         #   Spawn bebop
         rd_template = Template(robot_desc)
@@ -119,5 +119,6 @@ def generate_launch_description():
     run = [gz_sim, time_bridge]
     run += [ROSTimer(period = 5.,
                  actions = models + bridge + controller)]
+                 # actions = models + bridge + controller )]
 
     return LaunchDescription(run)
