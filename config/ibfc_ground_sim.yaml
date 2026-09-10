@@ -6,14 +6,11 @@ CamR: [0.,-1., 0.,
        0., 0.,-1.]
 CamT: [0., 0., -0.05]
 
-pd: [0., -1.,2., 0,
-     1., -1.,2., 0,
-     0.,  1.,2., 0,
-     1.,  1.,2., 0]
-p0: [0., -1.,2., 0.22,
-     1.5, -1.,1.5, 0.5,
-     0.,  0.,2.5, -0.5,
-     1.,  0.,2., -0.22]
+
+# p0: [0., -1.,2., 0.22,
+#      1.5, -1.,1.5, 0.5,
+#      0.,  0.,2.5, -0.5,
+#      1.,  0.,2., -0.22]
 n_agents: 4
 
 L: [0, 1, 1, 1,
@@ -27,29 +24,53 @@ takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
 gain_takeoff: .3
-ref_prefix: "reference_ground"
 
 polar: false
-gain: .01
+gain: .04
 gain_w: 1.
-img_depth: 2.
 
-tracker: [  nfeatures,
-            scaleFactor,
-            nlevels,
-            edgeThreshold,
-            patchSize,
-            fastThreshold,
-            flann_ratio,
-            matcher_threshold]
-tracker_vals: [ 100,
-                1.2,
-                8,
-                15,
-                30,
-                20,
-                0.7,
-                12]
+#   Image track
+# pd: [0., -1.,2., 0,
+#      1., -1.,2., 0,
+#      0.,  1.,2., 0,
+#      1.,  1.,2., 0]
+# p0: [-0.5, -1.,2., 0,
+#      1., -1.,2., 0,
+#      0.,  1.,2., 0,
+#      1.,  1.,2., 0]
+# img_depth: 2.
+# tracker: [  nfeatures,
+#             scaleFactor,
+#             nlevels,
+#             edgeThreshold,
+#             patchSize,
+#             fastThreshold,
+#             flann_ratio,
+#             matcher_threshold]
+# tracker_vals: [ 100,
+#                 1.2,
+#                 8,
+#                 15,
+#                 30,
+#                 20,
+#                 0.7,
+#                 12]
+# ref_prefix: "reference_ground"
+# world_name: "ground.world"
+
+# Arucos
+aruco_dictionary: 4X4_1000
+ref_prefix: "reference_ground_aruco"
+world_name: "ground_and_arucos.world"
+img_depth: 3.
+pd: [0., -1.,3., 0,
+     1., -1.,3., 0,
+     0.,  1.,3., 0,
+     1.,  1.,3., 0]
+p0: [-0.8, -1.,3., 0.1,
+     1., -0.5,2.8, 0,
+     0.5,  0.8,3., -0.1,
+     1.,  1.,3.2, 0]
 
 save_log: false
 # output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output/proporcional_06

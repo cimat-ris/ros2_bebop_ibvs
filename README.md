@@ -161,7 +161,7 @@ alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
 alias ref="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  REFERENCE CONDITION
-alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 7}\" --once" #  #  Reset tracking points
+alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 7}\" --once" #  Reset tracking points
 
 ```
 
@@ -192,7 +192,7 @@ alias ibvs="ros2 topic pub --once /state std_msgs/Int32 \"{data: 1}\" " #  IBFC
 alias stop="ros2 topic pub --once /state std_msgs/Int32 \"{data: 4}\" " #  STOP
 alias init="ros2 topic pub --once /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
 alias ref="ros2 topic pub --once /state std_msgs/Int32 \"{data: 6}\" " #  REFERENCE CONDITION
-alias trackr="ros2 topic pub --once /state std_msgs/Int32 \"{data: 7}\" " #  REFERENCE CONDITION
+alias trackr="ros2 topic pub --once /state std_msgs/Int32 \"{data: 7}\" " #  Reset tracking points
 ```
 
 

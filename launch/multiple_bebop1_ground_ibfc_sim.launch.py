@@ -29,14 +29,13 @@ def generate_launch_description():
         return
     bridge_config = os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml')
 
-
     # Launch Gazebo
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
         launch_arguments={
-            'gz_args': '-r -z 1000000 ground.world ',
+            'gz_args': f"-r -z 1000000 {config["world_name"]} ",
             # 'gz_args': '-r -z 1000000 simple_lab_2.world ',
         'on_exit_shutdown': 'true'}.items(),
     )

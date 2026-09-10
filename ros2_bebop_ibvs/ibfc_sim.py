@@ -488,6 +488,7 @@ class Controller(Node):
             self.send_points = self.send_arucos
             self.preproc_image = self.preproc_image_arucos
             self.save_data = self.save_arucos
+            self.view_corners = None
             return self.config_aruco()
 
         if len(self.tracker) > 1 :
@@ -502,8 +503,9 @@ class Controller(Node):
 
     def config_aruco(self):
         # TODO use makers
-        # markers = markers_list.index(self.aruco_dictionary)
-        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
+        markers = markers_list.index(self.aruco_dictionary)
+        aruco_dict = cv2.aruco.getPredefinedDictionary(markers)
+        # aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
         parameters = cv2.aruco.DetectorParameters()
         self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
@@ -569,6 +571,7 @@ class Controller(Node):
         # self.ids = [None]*self.n_agents
         self.desc = [None]*self.n_agents
         self.deltas = [None]*self.n_agents
+        self.ids_save = [None]*self.n_agents
         # self.p = [None]*self.n_agents
         self.get_logger().info(f"{self.label}: Reading Image")
         self.image_ref = cv2.imread(f"{self.reference_image_prefix}_{self.label}.png")
@@ -796,17 +799,16 @@ class Controller(Node):
                     binary = struct.pack('didd', *data)
                     f.write(binary)
 
-            # for j in self.in_neighbors:
-            #     with open(self.error_d[j], 'ab') as f:
-            #         for i in range(len(self.ids[j])):
-            #
-            #             data = (t, self.ids[j][i])
-            #             data += tuple(self.error[j][:,4*i:4*(i+1)].T.reshape(-1))
-            #             diff = 10 - len(data)
-            #             if diff !=0:
-            #                 data += tuple(np.zeros(diff))
-            #             binary = struct.pack('didddddddd', *data)
-            #             f.write(binary)
+            for j in self.in_neighbors:
+                if self.ids_save[j] is None:
+                    continue
+                with open(self.error_d[j], 'ab') as f:
+                    for i, m in enumerate( self.ids_save[j]):
+
+                        data = (t, m)
+                        data += tuple(self.error[j][:,i].T.reshape(-1))
+                        binary = struct.pack('didd', *data)
+                        f.write(binary)
 
 
         # save log
@@ -1180,6 +1182,7 @@ class Controller(Node):
         return _image
 
     def control_p_tracking(self, _image = None):
+        _n = 0.
         for j in self.in_neighbors:
             if self.deltas[j] is None:
                 continue
@@ -1195,9 +1198,11 @@ class Controller(Node):
                     if m.distance < self.tracker["flann_ratio"] * n.distance:
                         good_matches.append(m)
 
-            if len(good_matches) <= 2:
+            if len(good_matches) <= 3:
                 self.get_logger().warning("No Neighboring Matches available")
                 continue
+            # else:
+            # self.get_logger().info("Neighboring Matches available")
 
             _p_i = np.float32([
                 self.points[:,m.trainIdx]
@@ -1217,17 +1222,24 @@ class Controller(Node):
                 for m in good_matches
             ]).T
 
-            # complement = _pr_i + _delta_j
-            # self.error[j] = _delta_i - _delta_j
-            # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
-            # self.L = interaction_matrix_xyz(complement, self.img_depth)
+            self.ids_save[j] = np.int8([
+                self.ids[m.trainIdx]
+                for m in good_matches
+            ]).T
+
+            complement = _delta_j - _pr_i
+            self.error[j] = _delta_j - _delta_i
+            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+            self.L = interaction_matrix_xyz(complement, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
 
             #   BEGIN TEST
             # self.error[j] = _delta_i
             # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
-            self.error[j] = self.deltas_self
-            self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+            # self.error[j] = _delta_i
+            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+            # self.error[j] = self.deltas_self
+            # self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
             #   END TEST
 
             L_inv = Inv_Moore_Penrose(self.L)
@@ -1239,7 +1251,8 @@ class Controller(Node):
                 self.get_logger().error("Invalid Ls matrix")
                 continue
 
-            self._u += - self.gain * L_inv @ self.error[j].T.reshape(-1)
+            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)
+            _n += 1.
 
             # TODO image draw
             # if not _image is None:
@@ -1253,6 +1266,15 @@ class Controller(Node):
             #                 view_ids,
             #                 borderColor = (50,1.,0.) )
 
+        # # BEGIN DEBUG
+        # if self.label != 0:
+        #     self.u = np.zeros(6)
+        #     return _image
+        # # END DEBUG
+
+        if _n != 0:
+            self.get_logger().info(f"Neig:{_n}")
+            self._u /= _n
         #   6DOF
         _w = self.R_cam @ self._u[3:]
         _v = (self.R_cam @ self._u[:3]).reshape(-1)
@@ -1500,6 +1522,8 @@ class Controller(Node):
     def preproc_image_arucos(self):
         if self.cv_image is None:
             return None
+        if self.view_corners is None:
+            return None
 
         #   Publish detection
         _image = self.cv_image.copy()
@@ -1653,7 +1677,7 @@ class Controller(Node):
             _delta = my_position- self.reference_pose[:3]
             if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
                 #   Proportional control iniside takeoff_threshold
-                self.get_logger().info(f"Initial condition reached")
+                self.get_logger().info(f"Reference pose reached")
                 self.init_complete = True
 
             msg = Twist()
