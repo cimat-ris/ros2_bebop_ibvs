@@ -91,7 +91,9 @@ def generate_launch_description():
         config["label"] = i
         _controller = Node(
                 package='ros2_bebop_ibvs',
-                executable='ibfc_sim',
+                # executable='ibfc_sim',
+                # executable='ibfc_sim_tracking',
+                executable='ibfc_sim_tracking_mod',
                 name='ibfc_'+str(i),
                 output='screen',
                 parameters=[config]
