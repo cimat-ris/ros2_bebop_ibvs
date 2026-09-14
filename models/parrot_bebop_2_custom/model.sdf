@@ -302,10 +302,12 @@
         <enableSubTopic>enable</enableSubTopic>
         <comLinkName>body</comLinkName>
 
-        <positionGain>5 5.5 3</positionGain>
+        <positionGain>5 5.5 3</positionGain> <!--What's This For?-->
+
         <velocityGain>4.5 4.5 2.5</velocityGain>
-        <attitudeGain>0.72 0.72 0.84</attitudeGain>
-        <angularRateGain>0.062 0.0624 0.0636</angularRateGain>
+
+        <attitudeGain>0.25 0.25 0.25</attitudeGain>
+        <angularRateGain>0.04 0.04 0.09</angularRateGain>
 
 
 

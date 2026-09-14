@@ -247,7 +247,7 @@ def plotError(directory,error):
         time = np.array(v["t"])
         error = np.array(v["v"]).copy()
         error = error.reshape((2,-1))
-        plot_time(ax, time,error )
+        plot_time(ax, time,error, ref = [0.] )
     # ax.set_ylim([-.5,.5])
     name = os.path.join(directory ,"Error.pdf")
     plt.savefig(name ,bbox_inches='tight')

@@ -18,15 +18,15 @@ L: [0, 1, 1, 1,
     1, 1, 0, 1,
     1, 1, 1, 0]
 
-frequency: 20.
+frequency: 30.
 robot_name_prefix: "parrot_bebop_2"
 takeoff_threshold: 0.05
 landing_threshold: 0.03
 hover_height: 1.5
-gain_takeoff: .3
+gain_takeoff: .6
 
 polar: false
-gain: .04
+gain: .08
 gain_w: 1.
 
 #   Image track
@@ -62,10 +62,14 @@ pd: [0., -1.,2., 0,
      1., -1.,2., 0,
      0.,  1.,2., 0,
      1.,  1.,2., 0]
-p0: [-0.5, -1.,2., 0,
+# p0: [-0.5, -1.,2., 0,
+#      1., -1.,2., 0,
+#      0.,  1.,2., 0,
+#      1.,  1.,2., 0]
+p0: [-0.5, -0.8,2.5, 0,
      1., -1.,2., 0,
-     0.,  1.,2., 0,
-     1.,  1.,2., 0]
+     -0.2,  1.,3., 0,
+     1.,  1.2,2., 0]
 img_depth: 2.
 tracker: [  nfeatures,
             scaleFactor,

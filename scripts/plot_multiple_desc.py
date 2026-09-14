@@ -1003,6 +1003,7 @@ def main(arg):
     position = [None]*arg.n
 
     for i in range(arg.n):
+
         position[i], velocities, velocities_log, n_e, features, error[i], error_int, log = read_data(directory,i, arg.n)
 
         if not n_e is None:
@@ -1013,7 +1014,7 @@ def main(arg):
             print("Ploting VELOCITIES ")
             plotVel(directory, velocities,
                     f"Velocities_{i}.pdf",
-                    lims = [-.1,.1])
+                    lims = [-.5,.5])
         if not velocities_log[0] is None:
             print("Ploting VELOCITIES Log Proportional ")
             plotVel(directory, velocities_log[0], f"Velocities_prop_{i}.pdf")

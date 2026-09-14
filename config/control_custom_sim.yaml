@@ -62,7 +62,7 @@ tracker_vals: [ 100,
 
 #   Contol
 polar: false
-gain: .04
+gain: .08
 gain_w: 1.
 img_depth: 2.
 
