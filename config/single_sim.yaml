@@ -1,0 +1,70 @@
+#   Drone definitions
+model: "parrot_bebop_2_custom"  # gazebo model name
+robot_name: "parrot_bebop_2"
+K:   [375.98849,  0.   ,428.,
+      0.     ,375.98849,240.,
+      0.     ,  0.   ,  1.   ]
+CamR: [0.,-1., 0.,
+      -1., 0., 0.,
+       0., 0.,-1.]
+CamT: [0., 0., -0.05]
+
+#   Conditions
+p0: [1., 1., 2., 0] #   Only translation
+pd: [0., 0., 2., 0] #   ground_reference.png
+
+
+
+# Simulation
+frequency: 30.
+save_log: false
+output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
+
+#   Control
+control: "ibvs_sim"
+gain: .08
+gain_w: 1.
+img_depth: 2.
+polar: false
+
+
+
+# --------------------------------------------------------
+#   Image Proc
+# --------------------------------------------------------
+
+#    Feature based
+world: "ground.world"
+# imageProc: "tracking"
+# imageProc: "matching"
+
+nfeatures: 100
+scaleFactor: 1.2
+nlevels: 8
+edgeThreshold: 15
+patchSize: 30
+fastThreshold: 20
+flann_ratio: 0.7
+# flann_ratio: 0.6
+matcher_threshold: 12
+ref_image: ground_reference.png
+
+
+# --------------------------------------------------------
+
+#   Aruco based
+# world: "ground_and_arucos.world"
+# imageProc: "arucos"
+# aruco_dictionary: 4X4_1000
+
+#     adaptiveThreshWinSizeMin: 141
+#     adaptiveThreshWinSizeMax: 251
+#     adaptiveThreshWinSizeStep: 20
+#     adaptiveThreshConstant: 4
+#     perspectiveRemovePixelPerCell: 10
+#     perspectiveRemoveIgnoredMarginPerCell: 0.2
+# ref_image: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/config/ground_reference_arucos.png
+
+
+
+
