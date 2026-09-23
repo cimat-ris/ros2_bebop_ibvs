@@ -20,16 +20,18 @@ import os
 import yaml
 
 #   Custom
-from .my_classes import StateNode, FeatureMatcher, interaction_matrix_xyz
-from .my_classes import  RESETVIS, IDLE, CONTROL
+from .my_classes import State, FeatureMatcher, interaction_matrix_xyz
+from .my_classes import  RESETVIS, CONTROL
 
 
 
-class Controller(StateNode, FeatureMatcher):
+class Controller(State, FeatureMatcher):
 
     def __init__(self):
-        super(StateNode,self).__init__('controller')
-        super(FeatureMatcher,self).__init__()
+        # super(Node,self).__init__()
+        # super(FeatureMatcher,self).__init__()
+        # super(State,self).__init__()
+        super().__init__('Controller')
         
         #   Save data
         self.proc_paramaters()
@@ -40,10 +42,10 @@ class Controller(StateNode, FeatureMatcher):
         #   State
         self.u = np.zeros(6)
         self._u = np.zeros(6)
-        self.new_state = IDLE
+        # self.new_state = IDLE
         self.current_pose = Pose()
         self.data2save = False
-        self.enable = False
+        # self.enable = False
         self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
         self.m_vel = Twist()
         self.cv_image = None
@@ -64,20 +66,21 @@ class Controller(StateNode, FeatureMatcher):
 
         #   Publishers
         qos = QoSProfile(depth=2)
-        self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}_{self.label}/cmd_vel",
-                                             qos)
-
-        print(f"/{self.robot_name}_{self.label}/cmd_vel" )
-        self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}_{self.label}/enable",
-                                                qos)
-
-        #   Subscriptions
-        self.pos_sub = self.create_subscription(Pose,
-                                                f"/{self.robot_name}_{self.label}/pose",
-                                                self.pos_changed,
-                                                qos)
+        self.create_publishers(qos)
+        # self.cmd_pub = self.create_publisher(Twist,
+        #                                      f"/{self.robot_name}_{self.label}/cmd_vel",
+        #                                      qos)
+        #
+        # print(f"/{self.robot_name}_{self.label}/cmd_vel" )
+        # self.cmd_enable = self.create_publisher(Bool,
+        #                                         f"/{self.robot_name}_{self.label}/enable",
+        #                                         qos)
+        #
+        # #   Subscriptions
+        # self.pos_sub = self.create_subscription(Pose,
+        #                                         f"/{self.robot_name}_{self.label}/pose",
+        #                                         self.pos_changed,
+        #                                         qos)
         # self.state_sub = self.create_subscription(Int32,
         #                                           f"/state_{self.label}",
         #                                           self.state_changed,
@@ -135,7 +138,7 @@ class Controller(StateNode, FeatureMatcher):
             self.get_logger().warning(f"{self.label}: Control configuration incomplete, simple control enabled")
             # self.timer = self.create_timer(1.0 / self.frequency, self.open_loop)
 
-        self.state = self.s_idle
+        # self.state = self.s_idle
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
 
@@ -171,14 +174,7 @@ class Controller(StateNode, FeatureMatcher):
         self.declare_parameter('save_log', False)
 
         #   Config tracker
-        self.declare_parameter('nfeatures', 100)
-        self.declare_parameter('scaleFactor', 1.2)
-        self.declare_parameter('nlevels', 8)
-        self.declare_parameter('edgeThreshold', 15)
-        self.declare_parameter('patchSize', 30)
-        self.declare_parameter('fastThreshold', 20)
-        self.declare_parameter('flann_ratio', 0.7)
-        self.declare_parameter('matcher_threshold', 12)
+
 
         self.frequency = self.get_parameter('frequency').value
         self.robot_name = self.get_parameter('robot_name').value.strip()
@@ -203,14 +199,7 @@ class Controller(StateNode, FeatureMatcher):
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
 
-        self.nfeatures = self.get_parameter('nfeatures').value
-        self.scaleFactor = self.get_parameter('scaleFactor').value
-        self.nlevels = self.get_parameter('nlevels').value
-        self.edgeThreshold = self.get_parameter('edgeThreshold').value
-        self.patchSize = self.get_parameter('patchSize').value
-        self.fastThreshold = self.get_parameter('fastThreshold').value
-        self.flann_ratio = self.get_parameter('flann_ratio').value
-        self.matcher_threshold = self.get_parameter('matcher_threshold').value
+
 
         if not self.robot_name:
             self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
@@ -344,7 +333,7 @@ class Controller(StateNode, FeatureMatcher):
         self.deltas = [None]*self.n_agents
         self.ids_save = [None]*self.n_agents
 
-        _ret = super().config_reference()
+        _ret = super().config_reference(f"{self.reference_image_prefix}_{self.label}.png")
         if not _ret:
             self.get_logger().error('Wrong reference configuration')
 
@@ -370,8 +359,8 @@ class Controller(StateNode, FeatureMatcher):
             return
         self.new_state = msg.data
         
-    def pos_changed(self, msg):
-        self.current_pose = msg
+    # def pos_changed(self, msg):
+    #     self.current_pose = msg
 
     # def normalize(self, p):
     #     _p = p.copy()

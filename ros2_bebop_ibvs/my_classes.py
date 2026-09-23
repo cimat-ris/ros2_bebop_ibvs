@@ -6,8 +6,8 @@
 
 # import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool
+from geometry_msgs.msg import Twist, Pose
+from std_msgs.msg import Bool, Int32
 from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
 # from PyQt5.QtGui import QImage
@@ -166,17 +166,40 @@ def Inv_Moore_Penrose(L):
 
 #   ---------------------------------------------------
 #   ---------------------------------------------------
-#   IMAGE PROC CLASS
+#   IMAGE PROC CLASS : Feature matcher
 #   ---------------------------------------------------
 #   ---------------------------------------------------
 
+# Assumtions:
+#     This will be used instead of Node class
 
-class FeatureMatcher():
+class FeatureMatcher(Node):
 
-    def __init__(self):
+    def __init__(self, name):
+
+        super().__init__(name)
         self.track_conf = False
+        super().declare_parameter('nfeatures', 100)
+        super().declare_parameter('scaleFactor', 1.2)
+        super().declare_parameter('nlevels', 8)
+        super().declare_parameter('edgeThreshold', 15)
+        super().declare_parameter('patchSize', 30)
+        super().declare_parameter('fastThreshold', 20)
+        super().declare_parameter('flann_ratio', 0.7)
+        super().declare_parameter('matcher_threshold', 12)
 
-    def config_reference(self):
+        #   TODO: matriz de intrinsecos
+
+        self.nfeatures = super().get_parameter('nfeatures').value
+        self.scaleFactor = super().get_parameter('scaleFactor').value
+        self.nlevels = super().get_parameter('nlevels').value
+        self.edgeThreshold = super().get_parameter('edgeThreshold').value
+        self.patchSize = super().get_parameter('patchSize').value
+        self.fastThreshold = super().get_parameter('fastThreshold').value
+        self.flann_ratio = super().get_parameter('flann_ratio').value
+        self.matcher_threshold = super().get_parameter('matcher_threshold').value
+
+    def config_reference(self, ref_name):
 
         # self.lk_params = dict(winSize=(15, 15),
         #                     maxLevel=2,
@@ -201,7 +224,7 @@ class FeatureMatcher():
 
         self.flann = cv2.FlannBasedMatcher(index_params)
 
-        self.image_ref = cv2.imread(f"{self.reference_image_prefix}_{self.label}.png")
+        self.image_ref = cv2.imread(ref_name)
         if  self.image_ref is None :
             return False
         gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
@@ -238,7 +261,7 @@ class FeatureMatcher():
                     good_matches.append(m)
 
         if len(good_matches) <= 4:
-            self.get_logger().warning("No Neighboring Matches available")
+            super().get_logger().warning("No Neighboring Matches available")
             return None
 
         _delta_i = np.float32([
@@ -255,7 +278,7 @@ class FeatureMatcher():
         _mask = _mask.reshape(-1)
 
         if _mask.sum() <= 4:
-            self.get_logger().warning("No Neighboring Matches available (RANSAC)")
+            super().get_logger().warning("No Neighboring Matches available (RANSAC)")
             return None
 
         _delta_i = _delta_i[_mask == 1,:].T
@@ -291,12 +314,47 @@ class FeatureMatcher():
             cv2.circle(self.m_image, points1[i,:].astype(int), point_radius, color1, -1)
             cv2.circle(self.m_image, points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
 
-class StateNode(Node):
+#   ---------------------------------------------------
+#   ---------------------------------------------------
+#   STATE MACHINE CLASS BASE
+#   ---------------------------------------------------
+#   ---------------------------------------------------
 
-    def __init__(self, name):
+# Asumtions:
+#     The following are defined:
+#         self.cmd_pub
+#         self.cmd_enable
+#         self.pos_sub
+#         self.initial_cond
+#         self.reference_pose
+#         self.gain_takeoff
+
+class State(Node):
+
+    def __init__(self,name):
         super().__init__(name)
         self.state = self.s_idle
+        self.new_state = IDLE
+        self.current_pose = Pose()
 
+    def create_publishers(self, qos):
+        # qos = QoSProfile(depth=2)
+        self.cmd_pub = self.create_publisher(Twist,
+                                             f"/{self.robot_name}_{self.label}/cmd_vel",
+                                             qos)
+
+        print(f"/{self.robot_name}_{self.label}/cmd_vel" )
+        self.cmd_enable = self.create_publisher(Bool,
+                                                f"/{self.robot_name}_{self.label}/enable",
+                                                qos)
+
+        #   Subscriptions
+        self.pos_sub = self.create_subscription(Pose,
+                                                f"/{self.robot_name}_{self.label}/pose",
+                                                self.pos_changed,
+                                                qos)
+    def pos_changed(self, msg):
+        self.current_pose = msg
 
     def s_idle(self):
 
