@@ -1,30 +1,15 @@
-#   Ros based packages for Image processing and basic IBVS controllers for single robot and multiagent.
-
-
-
 #!/usr/bin/env python3
+
+#   Ros based packages for Image processing and basic Image based  controllers for single robot and multiagent.
 
 # import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, Pose
 from std_msgs.msg import Bool, Int32
 from tf_transformations import quaternion_matrix, euler_from_matrix
-from cv_bridge import CvBridge
-# from PyQt5.QtGui import QImage
 import cv2
 import numpy as np
-# import struct
-# import os
 
-# STATE = ["IDLE",
-#           "CONTROL",
-#           "TAKEOFF",
-#           "LAND",
-#           "STOP",
-#           "INITCOND",
-#           "REFERENCE",
-#           "RESETVIS",
-#           ]
 IDLE = 0
 CONTROL = 1
 TAKEOFF = 2
@@ -139,30 +124,6 @@ def Inv_Moore_Penrose(L):
         return None
     return np.linalg.inv(A) @ L.T
 
-# def custom_draw_matching(image1, image2, points1, points2,
-#                          color1=(0, 0, 255), color2=(0, 255, 0),
-#                          point_radius=3, line_thickness = 1):
-#
-#     _shape = list(image1.shape)
-#     W = _shape[1]
-#     _shape[1] *= 2
-#     _shape = tuple(_shape)
-#     output_image = np.zeros(_shape, dtype = image1.dtype)
-#     output_image[:,:W,:] = image1.copy()
-#     output_image[:,W:,:] = image2.copy()
-#
-#     # Draw points from the first array
-#     _points2 = points2.copy()
-#     _points2 += np.array([W,0.])
-#     for i in range(points1.shape[0]):
-#         # Draw the line
-#         cv2.line(output_image, points1[i,:].astype(int), _points2[i,:].astype(int), color1, line_thickness)
-#
-#         # Draw points
-#         cv2.circle(output_image, points1[i,:].astype(int), point_radius, color1, -1)
-#         cv2.circle(output_image, _points2[i,:].astype(int), point_radius, color2, -1)
-#
-#     return output_image
 
 #   ---------------------------------------------------
 #   ---------------------------------------------------
@@ -170,8 +131,6 @@ def Inv_Moore_Penrose(L):
 #   ---------------------------------------------------
 #   ---------------------------------------------------
 
-# Assumtions:
-#     This will be used instead of Node class
 
 class FeatureMatcher(Node):
 
@@ -343,14 +302,6 @@ class FeatureMatcher(Node):
 #   ---------------------------------------------------
 #   ---------------------------------------------------
 
-# Asumtions:
-#     The following are defined:
-#         self.cmd_pub
-#         self.cmd_enable
-#         self.pos_sub
-#         self.initial_cond
-#         self.reference_pose
-#         self.gain_takeoff
 
 class State(Node):
 
@@ -361,6 +312,10 @@ class State(Node):
         self.current_pose = Pose()
         self.m_vel = Twist()
         self.takeoff_complete = False
+
+        # Define in subclass
+        self.initial_cond = None
+        self.reference_pose = None
 
         super().declare_parameter('takeoff_threshold', 0.04)
         super().declare_parameter('landing_threshold', 0.08)
@@ -373,9 +328,8 @@ class State(Node):
         self.takeoff_height = super().get_parameter('takeoff_height').value
         self.gain_takeoff = super().get_parameter('gain_takeoff').value
 
-
+    #   Initial configuration before loop
     def create_publishers(self, qos):
-        # qos = QoSProfile(depth=2)
         self.cmd_pub = self.create_publisher(Twist,
                                              f"/{self.robot_name}_{self.label}/cmd_vel",
                                              qos)
@@ -393,6 +347,7 @@ class State(Node):
     def pos_changed(self, msg):
         self.current_pose = msg
 
+    #   STATES:
     def s_idle(self):
 
         if self.new_state == IDLE:
@@ -588,7 +543,6 @@ class State(Node):
             #   Landing finished
             self.get_logger().info("¡Landing complete!")
             self.state = self.s_idle
-            # self.enable = False
             self.cmd_enable.publish(Bool(data=False))
             self.cmd_pub.publish(Twist())
             return
@@ -607,8 +561,6 @@ class State(Node):
         self.m_vel.linear.y = float(u[1])
         self.m_vel.linear.z = float(u[2])
         self.m_vel.angular.z = float(u[5])
-        # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
-        # self.cmd_pub.publish(self.m_vel)
 
         try:
             self.cmd_pub.publish(self.m_vel)
@@ -641,7 +593,6 @@ class State(Node):
         self.cmd_pub.publish(Twist())
         self.cmd_pub.publish(Twist())
         self.cmd_pub.publish(Twist())
-        # self.enable = False
         self.cmd_enable.publish(Bool(data=False))
         self.get_logger().info("State change: IDLE")
         self.state = self.s_idle
