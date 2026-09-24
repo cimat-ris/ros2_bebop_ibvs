@@ -307,7 +307,7 @@ class Controller(State, FeatureMatcher):
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
             return
-        #     self.reset_flag = True
+        # self.reset_flag = True
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -486,9 +486,9 @@ class Controller(State, FeatureMatcher):
         #     return
         # # END DEBUG
 
-        if _n != 0:
-            self.get_logger().info(f"Neig:{_n}")
-            self._u /= _n
+        # if _n != 0:
+        #     self.get_logger().info(f"Neig:{_n}")
+        #     self._u /= _n
         # self._u = np.zeros(6)
         #   6DOF
         _w = self.R_cam @ self._u[3:]
@@ -543,6 +543,8 @@ class Controller(State, FeatureMatcher):
         #   Preprocess matching points image
         self.preproc_image()
         #   Exec state
+        if not self.p is None:
+            self.custom_draw(self.m_image, self.p.T)
         self.state()
         #   Publish matching image
         if self.m_image is None:

@@ -132,12 +132,255 @@ def Inv_Moore_Penrose(L):
 #   ---------------------------------------------------
 
 
-class FeatureMatcher(Node):
+class ImageProc(Node):
+
+    def __init__(self, name):
+        super().__init__(name)
+        super().declare_parameter('K', [1.]*9)
+        self.K = super().get_parameter('K').value
+
+        self.f = [self.K[0], self.K[4]]
+        self.pPrinc = [self.K[2],self.K[5]]
+        self.K = np.array(self.K).reshape((3,3))
+
+        self.p = None
+
+    def normalize(self, p):
+        _p = p.copy()
+        _p[0,:] -= self.pPrinc[0]#cu
+        _p[1,:] -= self.pPrinc[1]#cv
+        _p[0,:] /= self.f[0]
+        _p[1,:] /= self.f[1]
+        return _p
+
+    def custom_draw_matching(self, m_image, points1, points2,
+                         color1=(0, 0, 255), color2=(0, 255, 0),
+                         point_radius=3, line_thickness = 1,
+                         reproject = False):
+
+        if reproject:
+            _points1 =  np.vstack([points1, np.ones(points1.shape[1])])
+            _points1 = self.K @ _points1
+            _points1 = _points1[:2,:] / _points1[2,:]
+            _points2 =  np.vstack([points2, np.ones(points2.shape[1])])
+            _points2 = self.K @ _points2
+            _points2 = _points2[:2,:] / _points2[2,:]
+            _points1 =  _points1.T
+            _points2 =  _points2.T
+        else:
+            _points1 =  points1.T
+            _points2 =  points2.T
+
+        for i in range(points1.shape[0]):
+            # Draw the line
+            cv2.line(m_image, _points1[i,:].astype(int), _points2[i,:].astype(int), color2, line_thickness)
+
+            # Draw points
+            cv2.circle(m_image, _points1[i,:].astype(int), point_radius, color1, -1)
+            cv2.circle(m_image, _points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
+
+    def custom_draw(self, m_image, points,
+                         color=(0, 0, 255),
+                         point_radius=3, line_thickness = 1,
+                         reproject = False):
+
+        if reproject:
+            _points =  np.vstack([points, np.ones(points.shape[1])])
+            _points = self.K @ _points
+            _points = _points[:2,:] / _points[2,:]
+        else:
+            _points =  points.T
+
+        for i in range(_points.shape[0]):
+
+            # Draw points
+            cv2.circle(m_image, _points[i,:].astype(int), point_radius, color, -1)
+
+
+class FeatureTracker(ImageProc):
 
     def __init__(self, name):
 
         super().__init__(name)
-        self.track_conf = False
+        super().declare_parameter('nfeatures', 100)
+        super().declare_parameter('scaleFactor', 1.2)
+        super().declare_parameter('nlevels', 8)
+        super().declare_parameter('edgeThreshold', 15)
+        super().declare_parameter('patchSize', 30)
+        super().declare_parameter('fastThreshold', 20)
+        super().declare_parameter('flann_ratio', 0.7)
+        super().declare_parameter('detect_threshold', 12)
+        super().declare_parameter('matcher_threshold', 12)
+
+
+
+
+        self.nfeatures = super().get_parameter('nfeatures').value
+        self.scaleFactor = super().get_parameter('scaleFactor').value
+        self.nlevels = super().get_parameter('nlevels').value
+        self.edgeThreshold = super().get_parameter('edgeThreshold').value
+        self.patchSize = super().get_parameter('patchSize').value
+        self.fastThreshold = super().get_parameter('fastThreshold').value
+        self.flann_ratio = super().get_parameter('flann_ratio').value
+        self.detect_threshold = super().get_parameter('detect_threshold').value
+        self.matcher_threshold = super().get_parameter('matcher_threshold').value
+
+        self.p = np.zeros((2,2), dtype = np.float32)
+        self.points = None
+        self.desc_self = None
+        self.reset_flag = False
+
+    def config_reference(self, ref_name = None):
+
+        self.lk_params = dict(winSize=(15, 15),
+                            maxLevel=2,
+                            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+        self.orb = cv2.ORB_create(
+            nfeatures    = int( self.nfeatures ),
+            scaleFactor  = self.scaleFactor,
+            nlevels      = int( self.nlevels ),
+            edgeThreshold= int( self.edgeThreshold ),
+            patchSize    = int( self.patchSize ),
+            fastThreshold= int( self.fastThreshold )
+            )
+
+        #   Matcher
+        index_params = {
+            "algorithm": 6,
+            "table_number": 20,
+            "key_size": 10,
+            "multi_probe_level": 2,
+        }
+
+        self.flann = cv2.FlannBasedMatcher(index_params)
+
+        if ref_name is None:
+
+            # TODO: keep a fized image frame for no reference
+
+            _img = cv2.imread("reference.png")
+            gray_image = cv2.cvtColor(_img, cv2.COLOR_BGR2GRAY)
+        else:
+            self.image_ref = cv2.imread(ref_name)
+            if  self.image_ref is None :
+                return False
+            gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
+            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
+            if self.desc_ref is None:
+                return False
+        self.prev_image = np.zeros((gray_image.shape),
+                                    dtype = gray_image.dtype)
+
+        return True
+
+
+
+    def match(self, desc, deltas):
+
+        #   match
+        knn_matches = self.flann.knnMatch(desc,
+                                self.desc_self, k=2)
+        # Lowe ratio test
+        good_matches = []
+        for matches in knn_matches:
+            if len(matches) == 2:
+                m, n = matches
+                if m.distance < self.flann_ratio * n.distance:
+                    good_matches.append(m)
+
+        if len(good_matches) <= self.matcher_threshold:
+            super().get_logger().warning("No Neighboring Matches available")
+            return None
+
+        _delta_i = np.float32([
+            self.points[:,m.trainIdx]
+            for m in good_matches
+        ])
+        _delta_j = np.float32([
+            deltas[:,m.queryIdx]
+            for m in good_matches
+        ])
+
+
+        _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
+        _mask = _mask.reshape(-1)
+
+        if _mask.sum() <= self.matcher_threshold:
+            super().get_logger().warning("No Neighboring Matches available (RANSAC)")
+            return None
+
+        _delta_i = _delta_i[_mask == 1,:].T
+        _delta_j = _delta_j[_mask == 1,:].T
+        _delta_i = _delta_i.reshape((2,-1))
+        _delta_j = _delta_j.reshape((2,-1))
+
+        return _delta_i, _delta_j
+
+    def img_proc(self, image):
+
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        #   Detect
+        # Extract Matches if not enough
+        new_pts, status, err = cv2.calcOpticalFlowPyrLK(
+            self.prev_image, gray_image,
+            self.p, None,
+            **self.lk_params)
+        self.prev_image = gray_image.copy()
+
+
+
+
+
+
+        if status is None or self.p.shape[0] < self.detect_threshold or self.reset_flag:
+
+            self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
+            if len(self.kp) <4:
+                return
+            self.p = np.float32([k.pt for k in self.kp  ])
+        else:
+            status = status.reshape(-1)
+            self.p = new_pts[status == 1]
+            _kp = []
+            for i,_k in enumerate(self.kp):
+                if status[i] == 1:
+                    _kp.append(_k)
+            self.kp = _kp
+            self.desc_self = self.desc_self[status == 1]
+        # else:
+        #     # print(f"{status.shape}, {self.p.shape} {len(self.kp)}")
+        #     # before = len(self.kp)
+        #     status = status.reshape(-1)
+        #     self.p = new_pts[status == 1]
+        #     _kp = []
+        #     for i,_k in enumerate(self.kp):
+        #         if status[i] == 1:
+        #             _kp.append(_k)
+        #     _kp
+        #     print(f" {self.p.shape} {len(_kp)}")
+        #     for i in range(self.p.shape[0]):
+        #         _kp[i].pt = self.p[i]
+        #     self.kp, self.desc_self = self.orb.compute(gray_image,
+        #                             _kp)
+        #     # print(f"{before} {len(self.kp)}")
+        #
+        # if len(self.kp) <4:
+        #     return
+
+
+        #  Kp conversion
+        # self.p = np.float32([k.pt for k in kp  ])
+        self.points = self.normalize(self.p.astype(float).T)
+
+
+
+class FeatureMatcher(ImageProc):
+
+    def __init__(self, name):
+
+        super().__init__(name)
         super().declare_parameter('nfeatures', 100)
         super().declare_parameter('scaleFactor', 1.2)
         super().declare_parameter('nlevels', 8)
@@ -146,10 +389,8 @@ class FeatureMatcher(Node):
         super().declare_parameter('fastThreshold', 20)
         super().declare_parameter('flann_ratio', 0.7)
         super().declare_parameter('matcher_threshold', 12)
-        super().declare_parameter('K', [1.]*9)
 
 
-        #   TODO: matriz de intrinsecos
 
         self.nfeatures = super().get_parameter('nfeatures').value
         self.scaleFactor = super().get_parameter('scaleFactor').value
@@ -159,17 +400,10 @@ class FeatureMatcher(Node):
         self.fastThreshold = super().get_parameter('fastThreshold').value
         self.flann_ratio = super().get_parameter('flann_ratio').value
         self.matcher_threshold = super().get_parameter('matcher_threshold').value
-        self.K = super().get_parameter('K').value
 
-        self.f = [self.K[0], self.K[4]]
-        self.pPrinc = [self.K[2],self.K[5]]
-        self.K = np.array(self.K).reshape((3,3))
 
     def config_reference(self, ref_name):
 
-        # self.lk_params = dict(winSize=(15, 15),
-        #                     maxLevel=2,
-        #                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
         self.orb = cv2.ORB_create(
             nfeatures    = int( self.nfeatures ),
@@ -198,20 +432,10 @@ class FeatureMatcher(Node):
         if self.desc_ref is None:
             return False
 
-        self.prev_image = np.zeros((gray_image.shape),
-                                    dtype = gray_image.dtype)
-        self.match_threshold = self.matcher_threshold
-        self.track_conf = True
 
         return True
 
-    def normalize(self, p):
-        _p = p.copy()
-        _p[0,:] -= self.pPrinc[0]#cu
-        _p[1,:] -= self.pPrinc[1]#cv
-        _p[0,:] /= self.f[0]
-        _p[1,:] /= self.f[1]
-        return _p
+
 
     def match(self, desc, deltas):
 
@@ -270,31 +494,7 @@ class FeatureMatcher(Node):
 
 
     #   Takes a list of points and overlaps the matches in the same picture
-    def custom_draw_matching(self, m_image, points1, points2,
-                         color1=(0, 0, 255), color2=(0, 255, 0),
-                         point_radius=3, line_thickness = 1,
-                         reproject = False):
 
-        if reproject:
-            _points1 =  np.vstack([points1, np.ones(points1.shape[1])])
-            _points1 = self.K @ _points1
-            _points1 = _points1[:2,:] / _points1[2,:]
-            _points2 =  np.vstack([points2, np.ones(points2.shape[1])])
-            _points2 = self.K @ _points2
-            _points2 = _points2[:2,:] / _points2[2,:]
-            _points1 =  _points1.T
-            _points2 =  _points2.T
-        else:
-            _points1 =  points1.T
-            _points2 =  points2.T
-
-        for i in range(points1.shape[0]):
-            # Draw the line
-            cv2.line(m_image, _points1[i,:].astype(int), _points2[i,:].astype(int), color2, line_thickness)
-
-            # Draw points
-            cv2.circle(m_image, _points1[i,:].astype(int), point_radius, color1, -1)
-            cv2.circle(m_image, _points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
 
 #   ---------------------------------------------------
 #   ---------------------------------------------------

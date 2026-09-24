@@ -37,6 +37,7 @@ output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
 
 #   Control
 control: "mav_ibvs_direct_tracking_sim"
+# control: "mav_ibvs_direct_matching_sim"
 gain: .08
 gain_w: 1.
 img_depth: 2.
@@ -59,7 +60,8 @@ patchSize: 30
 fastThreshold: 20
 flann_ratio: 0.7
 # flann_ratio: 0.6
-matcher_threshold: 12
+detect_threshold: 12
+matcher_threshold: 6
 ref_prefix: "reference_ground"
 
 

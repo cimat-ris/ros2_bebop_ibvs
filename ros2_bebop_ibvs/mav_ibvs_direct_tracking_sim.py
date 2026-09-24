@@ -24,16 +24,15 @@ from .my_classes import *
 
 
 
-class Controller(State, FeatureMatcher):
+class Controller(State, FeatureTracker):
 
     def __init__(self):
         super().__init__('Controller')
         
         #   Save data
-        self.proc_paramaters()
+        enable_IBVS = self.proc_paramaters()
+        self.config_reference()
 
-        #   Load references
-        enable_IBVS = self.config_reference()
 
         #   State
         self.u = np.zeros(6)
@@ -44,10 +43,9 @@ class Controller(State, FeatureMatcher):
         self.error = [None]*self.n_agents
         self._err_int = [None]*self.n_agents
         self.norm = -1.
-        self.deltas_self = None
         self.lost_features = False
-        self.desc_self = None
-        self.points = None
+        self.desc = [None]*self.n_agents
+        self.deltas = [None]*self.n_agents
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -196,9 +194,15 @@ class Controller(State, FeatureMatcher):
         with open(_name, 'w') as yaml_file:
             yaml.dump(param_dict, yaml_file)
 
-
+        #   Frame transformation robot-camera
+        self.R_cam = np.array(self.camR).reshape((3,3))
+        self.t_cam = np.array(self.camT)
 
         #   inital conditions
+        if len(self.reference_pose) != 4*self.n_agents:
+            return False
+        if len(self.initial_cond) != 4*self.n_agents:
+            return False
         #   TODO: simplify
         self.initial_cond =  np.array(self.initial_cond)
         self.initial_cond = self.initial_cond.reshape((-1,4))
@@ -221,9 +225,7 @@ class Controller(State, FeatureMatcher):
         self.reference_pose = self.reference_pose[self.label]
 
 
-        #   Frame transformation robot-camera
-        self.R_cam = np.array(self.camR).reshape((3,3))
-        self.t_cam = np.array(self.camT)
+
 
         #   Graph Laplacian
         if len(self.L) != self.n_agents**2 :
@@ -236,7 +238,7 @@ class Controller(State, FeatureMatcher):
         _neighbors = self.L[:,self.label].tolist()
         self.out_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
 
-
+        return True
 
     def config_data_storage(self):
 
@@ -282,32 +284,11 @@ class Controller(State, FeatureMatcher):
                 with open(self.error_int_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
 
-    def config_reference(self):
-
-
-        self.desc = [None]*self.n_agents
-        self.deltas = [None]*self.n_agents
-        self.ids_save = [None]*self.n_agents
-
-        _ret = super().config_reference(f"{self.reference_image_prefix}_{self.label}.png")
-        if not _ret:
-            self.get_logger().error('Wrong reference configuration')
-
-        self.get_logger().info(str(self.desc_ref.shape))
-
-        self.p = np.zeros((2,2), dtype = np.float32)
-        self.deltas_self = np.zeros((2,2), dtype = np.float32)
-        self.ids = np.zeros(2, dtype = np.float32)
-        self.desc_masked = np.zeros((2,2), dtype = np.int8)
-
-
-        return True
-
 
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
+            self.reset_flag = True
             return
-        #     self.reset_flag = True
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -330,7 +311,7 @@ class Controller(State, FeatureMatcher):
         except Exception as e:
             self.get_logger().error(f"Unexpected error: {e}")
 
-        self.img_proc()
+        self.img_proc(self.cv_image)
 
 
     def save_data(self):
@@ -385,11 +366,13 @@ class Controller(State, FeatureMatcher):
     def delta_receiver(self, msg):
 
         #   TODO: include depth
+        if self.desc_self is None:
+            return
 
         j = msg.j
         _depth = msg.depth
 
-        _desc = np.array(msg.desc.data, dtype= self.desc_ref.dtype )
+        _desc = np.array(msg.desc.data, dtype= self.desc_self.dtype )
         _desc = _desc.reshape((msg.desc.rows, msg.desc.cols))
 
         _deltas = np.array(msg.deltas.data, dtype= np.float32 )
@@ -435,6 +418,7 @@ class Controller(State, FeatureMatcher):
 
             _ret = self.match(self.desc[j], self.deltas[j])
             if _ret is None:
+                self.get_logger().warning("Not enough contribution error")
                 continue
 
             _delta_i, _delta_j = _ret
@@ -543,6 +527,10 @@ class Controller(State, FeatureMatcher):
         #   Preprocess matching points image
         self.preproc_image()
         #   Exec state
+        if len(self.p) > 2:
+            self.custom_draw(self.m_image, self.p.T)
+            # self.get_logger().info(f"IBVS tracking {len(self.p)}")
+            # self.get_logger().info(f"IBVS tracking {str(self.p)}")
         self.state()
         #   Publish matching image
         if self.m_image is None:
