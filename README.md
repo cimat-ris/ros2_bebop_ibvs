@@ -134,19 +134,17 @@ export GZ_VERSION=jetty
 
 
 
-# Simulation or a single agent Visual Servo
+# Simulation or a single agent Image Based Controllers
 
 ```bash
 # screen 1 (choose one)
-ros2 launch ros2_bebop_ibvs bebop1_ibvs_sim.launch.py   # bebop simple
-ros2 launch ros2_bebop_ibvs bebop1_hbvs_sim.launch.py   # bebop ibvs
-ros2 launch ros2_bebop_ibvs bebop1_ground_sim.launch.py # ground view ibvs
+ros2 launch ros2_bebop_ibvs single_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
 ros2 topic pub  /state std_msgs/Int32 "{data: 2}" --once #  TAKEOFF
 ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
-ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  IBVS
+ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  CONTROL
 ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
 ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
@@ -157,7 +155,7 @@ For simplicity the following aliases can be defined
 ```bash
 alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TAKEOFF
 alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
-alias ibvs="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  IBVS
+alias control="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  CONTROL
 alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
 alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
 alias ref="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  REFERENCE CONDITION
@@ -166,18 +164,17 @@ alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 7}\" --once" #  Res
 ```
 
 
-# Simulation of multiple agents IBVS - Formation Control
+# Simulation of multiple agents Image Based Controllers - Formation Control
 
 ```bash
 # screen 1
-ros2 launch   ros2_bebop_ibvs multiple_bebop1_ibfc_sim.launch.py
-ros2 launch   ros2_bebop_ibvs multiple_bebop1_ground_ibfc_sim.launch.py
+ros2 launch   ros2_bebop_ibvs mav_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 2}"  #  TAKEOFF
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 3}"  #  LAND
-ros2 topic pub --once  /state std_msgs/Int32 "{data: 1}"  #  IBVS
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 1}"  #  CONTROL
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 4}"  #  STOP
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 5}"  #  INITAL CONDITION
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
@@ -188,7 +185,7 @@ For simplicity the following aliases can be defined
 ```bash
 alias takeoff="ros2 topic pub --once /state std_msgs/Int32 \"{data: 2}\" " #  TAKEOFF
 alias land="ros2 topic pub --once /state std_msgs/Int32 \"{data: 3}\" " #  LAND
-alias ibvs="ros2 topic pub --once /state std_msgs/Int32 \"{data: 1}\" " #  IBFC
+alias control="ros2 topic pub --once /state std_msgs/Int32 \"{data: 1}\" " #  CONTROL
 alias stop="ros2 topic pub --once /state std_msgs/Int32 \"{data: 4}\" " #  STOP
 alias init="ros2 topic pub --once /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
 alias ref="ros2 topic pub --once /state std_msgs/Int32 \"{data: 6}\" " #  REFERENCE CONDITION

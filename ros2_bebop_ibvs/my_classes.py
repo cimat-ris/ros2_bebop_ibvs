@@ -16,15 +16,15 @@ import numpy as np
 # import struct
 # import os
 
-STATE = ["IDLE",
-          "CONTROL",
-          "TAKEOFF",
-          "LAND",
-          "STOP",
-          "INITCOND",
-          "REFERENCE",
-          "RESETVIS",
-          ]
+# STATE = ["IDLE",
+#           "CONTROL",
+#           "TAKEOFF",
+#           "LAND",
+#           "STOP",
+#           "INITCOND",
+#           "REFERENCE",
+#           "RESETVIS",
+#           ]
 IDLE = 0
 CONTROL = 1
 TAKEOFF = 2
@@ -187,6 +187,8 @@ class FeatureMatcher(Node):
         super().declare_parameter('fastThreshold', 20)
         super().declare_parameter('flann_ratio', 0.7)
         super().declare_parameter('matcher_threshold', 12)
+        super().declare_parameter('K', [1.]*9)
+
 
         #   TODO: matriz de intrinsecos
 
@@ -198,6 +200,11 @@ class FeatureMatcher(Node):
         self.fastThreshold = super().get_parameter('fastThreshold').value
         self.flann_ratio = super().get_parameter('flann_ratio').value
         self.matcher_threshold = super().get_parameter('matcher_threshold').value
+        self.K = super().get_parameter('K').value
+
+        self.f = [self.K[0], self.K[4]]
+        self.pPrinc = [self.K[2],self.K[5]]
+        self.K = np.array(self.K).reshape((3,3))
 
     def config_reference(self, ref_name):
 
@@ -247,11 +254,11 @@ class FeatureMatcher(Node):
         _p[1,:] /= self.f[1]
         return _p
 
-    def match(self):
+    def match(self, desc, deltas):
 
         #   match
-        knn_matches = self.flann.knnMatch(self.desc[j],
-                                            self.desc_self, k=2)
+        knn_matches = self.flann.knnMatch(desc,
+                                self.desc_self, k=2)
         # Lowe ratio test
         good_matches = []
         for matches in knn_matches:
@@ -269,7 +276,7 @@ class FeatureMatcher(Node):
             for m in good_matches
         ])
         _delta_j = np.float32([
-            self.deltas[j][:,m.queryIdx]
+            deltas[:,m.queryIdx]
             for m in good_matches
         ])
 
@@ -302,17 +309,33 @@ class FeatureMatcher(Node):
         self.p = np.float32([k.pt for k in kp  ])
         self.points = self.normalize(self.p.astype(float).T)
 
-    def custom_draw_matching(self, points1, points2,
+
+    #   Takes a list of points and overlaps the matches in the same picture
+    def custom_draw_matching(self, m_image, points1, points2,
                          color1=(0, 0, 255), color2=(0, 255, 0),
-                         point_radius=3, line_thickness = 1):
+                         point_radius=3, line_thickness = 1,
+                         reproject = False):
+
+        if reproject:
+            _points1 =  np.vstack([points1, np.ones(points1.shape[1])])
+            _points1 = self.K @ _points1
+            _points1 = _points1[:2,:] / _points1[2,:]
+            _points2 =  np.vstack([points2, np.ones(points2.shape[1])])
+            _points2 = self.K @ _points2
+            _points2 = _points2[:2,:] / _points2[2,:]
+            _points1 =  _points1.T
+            _points2 =  _points2.T
+        else:
+            _points1 =  points1.T
+            _points2 =  points2.T
 
         for i in range(points1.shape[0]):
             # Draw the line
-            cv2.line(self.m_image, points1[i,:].astype(int), points2[i,:].astype(int), color2, line_thickness)
+            cv2.line(m_image, _points1[i,:].astype(int), _points2[i,:].astype(int), color2, line_thickness)
 
             # Draw points
-            cv2.circle(self.m_image, points1[i,:].astype(int), point_radius, color1, -1)
-            cv2.circle(self.m_image, points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
+            cv2.circle(m_image, _points1[i,:].astype(int), point_radius, color1, -1)
+            cv2.circle(m_image, _points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
 
 #   ---------------------------------------------------
 #   ---------------------------------------------------
@@ -336,6 +359,20 @@ class State(Node):
         self.state = self.s_idle
         self.new_state = IDLE
         self.current_pose = Pose()
+        self.m_vel = Twist()
+        self.takeoff_complete = False
+
+        super().declare_parameter('takeoff_threshold', 0.04)
+        super().declare_parameter('landing_threshold', 0.08)
+        super().declare_parameter('takeoff_height', 1.0)
+        super().declare_parameter('gain_takeoff', 1.)
+
+
+        self.takeoff_threshold = super().get_parameter('takeoff_threshold').value
+        self.landing_threshold = super().get_parameter('landing_threshold').value
+        self.takeoff_height = super().get_parameter('takeoff_height').value
+        self.gain_takeoff = super().get_parameter('gain_takeoff').value
+
 
     def create_publishers(self, qos):
         # qos = QoSProfile(depth=2)
@@ -564,7 +601,22 @@ class State(Node):
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
 
-    def s_control(self):
+    def s_control(self, u):
+
+        self.m_vel.linear.x = float(u[0])
+        self.m_vel.linear.y = float(u[1])
+        self.m_vel.linear.z = float(u[2])
+        self.m_vel.angular.z = float(u[5])
+        # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
+        # self.cmd_pub.publish(self.m_vel)
+
+        try:
+            self.cmd_pub.publish(self.m_vel)
+        except Exception as e:
+            self.get_logger().error(f"Error with IBFC control: {str(e)}")
+            self.enable = False
+            self.cmd_enable.publish(Bool(data=self.enable))
+
 
         #   Change state
         if self.new_state == LAND:

@@ -20,17 +20,13 @@ import os
 import yaml
 
 #   Custom
-from .my_classes import State, FeatureMatcher, interaction_matrix_xyz
-from .my_classes import  RESETVIS, CONTROL
+from .my_classes import *
 
 
 
 class Controller(State, FeatureMatcher):
 
     def __init__(self):
-        # super(Node,self).__init__()
-        # super(FeatureMatcher,self).__init__()
-        # super(State,self).__init__()
         super().__init__('Controller')
         
         #   Save data
@@ -42,12 +38,7 @@ class Controller(State, FeatureMatcher):
         #   State
         self.u = np.zeros(6)
         self._u = np.zeros(6)
-        # self.new_state = IDLE
-        self.current_pose = Pose()
         self.data2save = False
-        # self.enable = False
-        self.takeoff_complete = False  # Nuevo flag para controlar despegue completado
-        self.m_vel = Twist()
         self.cv_image = None
         self.m_image = None
         self.error = [None]*self.n_agents
@@ -55,7 +46,6 @@ class Controller(State, FeatureMatcher):
         self.norm = -1.
         self.deltas_self = None
         self.lost_features = False
-        self.reset_flag = False
         self.desc_self = None
         self.points = None
 
@@ -67,24 +57,6 @@ class Controller(State, FeatureMatcher):
         #   Publishers
         qos = QoSProfile(depth=2)
         self.create_publishers(qos)
-        # self.cmd_pub = self.create_publisher(Twist,
-        #                                      f"/{self.robot_name}_{self.label}/cmd_vel",
-        #                                      qos)
-        #
-        # print(f"/{self.robot_name}_{self.label}/cmd_vel" )
-        # self.cmd_enable = self.create_publisher(Bool,
-        #                                         f"/{self.robot_name}_{self.label}/enable",
-        #                                         qos)
-        #
-        # #   Subscriptions
-        # self.pos_sub = self.create_subscription(Pose,
-        #                                         f"/{self.robot_name}_{self.label}/pose",
-        #                                         self.pos_changed,
-        #                                         qos)
-        # self.state_sub = self.create_subscription(Int32,
-        #                                           f"/state_{self.label}",
-        #                                           self.state_changed,
-        #                                           qos)
 
 
         if enable_IBVS:
@@ -152,9 +124,7 @@ class Controller(State, FeatureMatcher):
 
         self.declare_parameter('frequency', 50.0)
         self.declare_parameter('robot_name', 'bebop')
-        self.declare_parameter('takeoff_threshold', 0.04)
-        self.declare_parameter('landing_threshold', 0.08)
-        self.declare_parameter('takeoff_height', 1.0)
+
         self.declare_parameter('label', 1)
         self.declare_parameter('n_agents', 1)
         self.declare_parameter('reference_image_prefix', "reference_f")
@@ -163,8 +133,7 @@ class Controller(State, FeatureMatcher):
         self.declare_parameter('gain', 1.)
         self.declare_parameter('gain_int', 0.)
         self.declare_parameter('gain_w', 1.)
-        self.declare_parameter('gain_takeoff', 1.)
-        self.declare_parameter('K', [1.]*9)
+
         self.declare_parameter('L', [0])
         self.declare_parameter('CamR', [1.]*9)
         self.declare_parameter('CamT', [1.]*9)
@@ -178,9 +147,7 @@ class Controller(State, FeatureMatcher):
 
         self.frequency = self.get_parameter('frequency').value
         self.robot_name = self.get_parameter('robot_name').value.strip()
-        self.takeoff_threshold = self.get_parameter('takeoff_threshold').value
-        self.landing_threshold = self.get_parameter('landing_threshold').value
-        self.takeoff_height = self.get_parameter('takeoff_height').value
+
         self.label = self.get_parameter('label').value
         self.n_agents = self.get_parameter('n_agents').value
         self.reference_image_prefix = self.get_parameter('reference_image_prefix').value
@@ -189,8 +156,8 @@ class Controller(State, FeatureMatcher):
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_int').value
-        self.gain_takeoff = self.get_parameter('gain_takeoff').value
-        self.K = self.get_parameter('K').value
+
+        # self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
         self.camR = self.get_parameter('CamR').value
         self.camT = self.get_parameter('CamT').value
@@ -199,13 +166,7 @@ class Controller(State, FeatureMatcher):
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
 
-
-
-        if not self.robot_name:
-            self.get_logger().info('Empty "robot_name": Setting "bebop" as default.')
-            self.robot_name = 'bebop'
-        # self.get_logger().info(f"Robot Name: {self.robot_name}_{self.label}")
-
+        self.get_logger().info(f"robot_name: {self.robot_name}_{self.label}")
 
         # Convert parameters to a dictionary
         param_dict = {
@@ -262,10 +223,7 @@ class Controller(State, FeatureMatcher):
         self.reference_pose = self.reference_pose[self.label]
 
 
-        #   Camera calibration data
-        self.f = [self.K[0], self.K[4]]
-        self.pPrinc = [self.K[2],self.K[5]]
-        self.K = np.array(self.K).reshape((3,3))
+        #   Frame transformation robot-camera
         self.R_cam = np.array(self.camR).reshape((3,3))
         self.t_cam = np.array(self.camT)
 
@@ -350,8 +308,8 @@ class Controller(State, FeatureMatcher):
 
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
-            self.reset_flag = True
             return
+        #     self.reset_flag = True
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -359,16 +317,6 @@ class Controller(State, FeatureMatcher):
             return
         self.new_state = msg.data
         
-    # def pos_changed(self, msg):
-    #     self.current_pose = msg
-
-    # def normalize(self, p):
-    #     _p = p.copy()
-    #     _p[0,:] -= self.pPrinc[0]#cu
-    #     _p[1,:] -= self.pPrinc[1]#cv
-    #     _p[0,:] /= self.f[0]
-    #     _p[1,:] /= self.f[1]
-    #     return _p
 
 
     def image_recv(self, msg):
@@ -499,7 +447,7 @@ class Controller(State, FeatureMatcher):
             if self.deltas[j] is None:
                 continue
 
-            _ret = self.match()
+            _ret = self.match(self.desc[j], self.deltas[j])
             if _ret is None:
                 continue
 
@@ -538,16 +486,20 @@ class Controller(State, FeatureMatcher):
                 continue
 
 
-            complement =  np.vstack([complement, np.ones(_delta_i.shape[1])])
-            complement = self.K @ complement
-            complement = complement[:2,:] / complement[2,:]
-            m_delta_i =  np.vstack([_delta_i, np.ones(_delta_i.shape[1])])
-            m_delta_i = self.K @ m_delta_i
-            m_delta_i = m_delta_i[:2,:] / m_delta_i[2,:]
-            # print(m_delta_i, complement)
-            self.custom_draw_matching(m_delta_i.T,
-                        complement.T,
-                        color2 = (0,124,int(255*j / self.n_agents)))
+            # complement =  np.vstack([complement, np.ones(_delta_i.shape[1])])
+            # complement = self.K @ complement
+            # complement = complement[:2,:] / complement[2,:]
+            # m_delta_i =  np.vstack([_delta_i, np.ones(_delta_i.shape[1])])
+            # m_delta_i = self.K @ m_delta_i
+            # m_delta_i = m_delta_i[:2,:] / m_delta_i[2,:]
+            # # print(m_delta_i, complement)
+            self.custom_draw_matching(self.m_image,
+                        # m_delta_i.T,
+                        # complement.T,
+                        _delta_i,
+                        complement,
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
 
 
         # # BEGIN DEBUG
@@ -600,24 +552,11 @@ class Controller(State, FeatureMatcher):
                 _v = self.error[j].reshape(-1)
                 _norm += np.dot(_v,_v)
             self.norm = np.sqrt(_norm)
-
-            self.m_vel.linear.x = float(self.u[0])
-            self.m_vel.linear.y = float(self.u[1])
-            self.m_vel.linear.z = float(self.u[2])
-            self.m_vel.angular.z = float(self.u[5])
-            # self.get_logger().info( f"Control_cmd_vel: {self.m_vel.angular.z}")
-            # self.cmd_pub.publish(self.m_vel)
             self.data2save = True
             self.save_data()
 
-        try:
-            self.cmd_pub.publish(self.m_vel)
-        except Exception as e:
-            self.get_logger().error(f"Error with IBFC control: {str(e)}")
-            self.enable = False
-            self.cmd_enable.publish(Bool(data=self.enable))
+        super().s_control(self.u)
 
-        super().s_control()
 
     def control_loop(self):
 
