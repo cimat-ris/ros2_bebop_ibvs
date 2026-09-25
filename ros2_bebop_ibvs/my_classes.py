@@ -228,7 +228,7 @@ class FeatureTracker(ImageProc):
         self.p = np.zeros((2,2), dtype = np.float32)
         self.points = None
         self.desc_self = None
-        self.reset_flag = False
+        self.reset_tracking = False
 
     def config_reference(self, ref_name = None):
 
@@ -290,7 +290,7 @@ class FeatureTracker(ImageProc):
                     good_matches.append(m)
 
         if len(good_matches) <= self.matcher_threshold:
-            super().get_logger().warning("No Neighboring Matches available")
+            super().get_logger().warning(f"No Neighboring Matches available {len(good_matches)} of {desc.shape}")
             return None
 
         _delta_i = np.float32([
@@ -334,20 +334,25 @@ class FeatureTracker(ImageProc):
 
 
 
-        if status is None or self.p.shape[0] < self.detect_threshold or self.reset_flag:
-
+        if status is None or self.p.shape[0] < self.detect_threshold or self.reset_tracking:
+            super().get_logger().info("Reseting tracking.")
             self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
             if len(self.kp) <4:
                 return
             self.p = np.float32([k.pt for k in self.kp  ])
+            self.ids = [i for i in range(self.p.shape[0])]
+            self.reset_tracking = False
         else:
             status = status.reshape(-1)
             self.p = new_pts[status == 1]
             _kp = []
-            for i,_k in enumerate(self.kp):
+            _ids = []
+            for i in range(len(self.ids)):
                 if status[i] == 1:
-                    _kp.append(_k)
+                    _kp.append(self.kp[i])
+                    _ids.append(self.ids[i])
             self.kp = _kp
+            self.ids = _ids
             self.desc_self = self.desc_self[status == 1]
         # else:
         #     # print(f"{status.shape}, {self.p.shape} {len(self.kp)}")

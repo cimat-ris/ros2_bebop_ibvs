@@ -693,6 +693,8 @@ def read_data(directory,label, n):
                     _feat = np.fromfile(fileH,
                                         dtype = np.float64,
                                         count = 2)
+                    # print(time, idx, _feat)
+
                     # print(time)
                     # print(idx)
                     # print(_feat)
@@ -899,9 +901,11 @@ def read_data(directory,label, n):
  #      -----------------------------------------------------------
  #          READ MAIN
 
-def get_pd(name):
+def get_config(name):
     with open(name, 'r') as file:
         _dict = yaml.safe_load(file)
+
+    n = _dict['n_agents']
 
     pd = np.array(_dict['pd'])
     pd = pd.reshape((-1,4))
@@ -912,7 +916,7 @@ def get_pd(name):
     # pd[:,3] = pi/2.
     pd[:,4] = pi
     # pd[:,5] -= pi/2.
-    return pd.T
+    return pd.T, n
 
 def join_error(error):
 
@@ -997,14 +1001,14 @@ def fit_position(position):
 def main(arg):
 
     directory = arg.directory
-    pd = get_pd(arg.desired)
+    pd, n = get_config(arg.config)
 
-    error = [None]*arg.n
-    position = [None]*arg.n
+    error = [None]*n
+    position = [None]*n
 
-    for i in range(arg.n):
+    for i in range(n):
 
-        position[i], velocities, velocities_log, n_e, features, error[i], error_int, log = read_data(directory,i, arg.n)
+        position[i], velocities, velocities_log, n_e, features, error[i], error_int, log = read_data(directory,i, n)
 
         if not n_e is None:
             print("Ploting  ")
@@ -1036,7 +1040,7 @@ def main(arg):
             print("Ploting 3D")
             plotPosition(directory, position[i][[0,1,2,3,6],:], f"State_{i}.pdf")
 
-        for j in range(arg.n):
+        for j in range(n):
             if not log[j] is None:
                 print("Ploting LOG")
                 plotLog(directory, log[j], f"LOG_SVD_D_{i}_{j}.pdf")
@@ -1062,15 +1066,13 @@ def main(arg):
 
 if __name__ ==  "__main__":
     description = "Plotting multiple agent experiment data"
-    parser = argparse.ArgumentParser(prog = 'python3 plot_multiple_desc.py',
+    parser = argparse.ArgumentParser(prog = 'python3 plot_mav_desc.py',
                                      description = description)
     parser.add_argument( 'directory', type=str, default = 'output',
         help = "Directory name (default output/)")
-    parser.add_argument( '--desired', type=str,
-        default = 'config/ibfc_ground_sim.yaml',
-        help = "File containign the desired formation (pd:)")
-    parser.add_argument( '--n', type=int, default = 4 ,
-        help = "Number of agents (default 4)")
+    parser.add_argument( '--config', type=str,
+        default = 'config/mav_sim.yaml',
+        help = "File containign the configurations (defaultconfig/mav_sim.yaml)")
 
     arg = parser.parse_args()
     main(arg)

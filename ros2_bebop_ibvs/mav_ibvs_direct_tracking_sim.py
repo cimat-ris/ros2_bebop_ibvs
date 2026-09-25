@@ -259,9 +259,9 @@ class Controller(State, FeatureTracker):
         #     with open(self.error_d[j], 'w') as file:
         #         pass  # 'w' mode clears the file's contents
 
-        # self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
-        # with open(self.features_d, 'w') as file:
-        #     pass  # 'w' mode clears the file's contents
+        self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
+        with open(self.features_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
 
         if self.enable_log:
             self.log_d = [None]*self.n_agents
@@ -269,25 +269,25 @@ class Controller(State, FeatureTracker):
                 self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
                 with open(self.log_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
-            if self.k_int != 0.:
-                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
-                with open(self.vel_log_d_0, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
-                with open(self.vel_log_d_1, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-
-        if self.k_int != 0.:
-            self.error_int_d = [None]*self.n_agents
-            for j in self.in_neighbors:
-                self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-                with open(self.error_int_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
+        #     if self.k_int != 0.:
+        #         self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+        #         with open(self.vel_log_d_0, 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
+        #         self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+        #         with open(self.vel_log_d_1, 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
+        #
+        # if self.k_int != 0.:
+        #     self.error_int_d = [None]*self.n_agents
+        #     for j in self.in_neighbors:
+        #         self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
+        #         with open(self.error_int_d[j], 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
 
 
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
-            self.reset_flag = True
+            self.reset_tracking = True
             return
         self.new_state = msg.data
 
@@ -306,10 +306,13 @@ class Controller(State, FeatureTracker):
             self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except CvBridgeError as e:
             self.get_logger().error(f"Error converting image: {e}")
+            return
         except KeyError as e:
             self.get_logger().error(f"Robot name not found in topic: {e}")
+            return
         except Exception as e:
             self.get_logger().error(f"Unexpected error: {e}")
+            return
 
         self.img_proc(self.cv_image)
 
@@ -340,26 +343,26 @@ class Controller(State, FeatureTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
-        # if not self.deltas is None:
-        #
-        #     with open(self.features_d, 'ab') as f:
-        #         for i, m in enumerate(self.ids):
-        #
-        #             data = (t, m)
-        #             data += tuple(self.p[i, :].reshape(-1))
-        #             binary = struct.pack('didd', *data)
-        #             f.write(binary)
-        #
-        #     for j in self.in_neighbors:
-        #         if self.ids_save[j] is None:
-        #             continue
-        #         with open(self.error_d[j], 'ab') as f:
-        #             for i, m in enumerate( self.ids_save[j]):
-        #
-        #                 data = (t, m)
-        #                 data += tuple(self.error[j][:,i].T.reshape(-1))
-        #                 binary = struct.pack('didd', *data)
-        #                 f.write(binary)
+        if not self.deltas is None:
+
+            with open(self.features_d, 'ab') as f:
+                for i, m in enumerate(self.ids):
+
+                    data = (t, m)
+                    data += tuple(self.p[i, :].reshape(-1))
+                    binary = struct.pack('didd', *data)
+                    f.write(binary)
+
+            # for j in self.in_neighbors:
+            #     if self.ids_save[j] is None:
+            #         continue
+            #     with open(self.error_d[j], 'ab') as f:
+            #         for i, m in enumerate( self.ids_save[j]):
+            #
+            #             data = (t, m)
+            #             data += tuple(self.error[j][:,i].T.reshape(-1))
+            #             binary = struct.pack('didd', *data)
+            #             f.write(binary)
         #
 
 
@@ -412,13 +415,15 @@ class Controller(State, FeatureTracker):
 
     def control(self):
         _n = 0.
+        mismatch = len(self.in_neighbors)
         for j in self.in_neighbors:
             if self.deltas[j] is None:
                 continue
 
             _ret = self.match(self.desc[j], self.deltas[j])
             if _ret is None:
-                self.get_logger().warning("Not enough contribution error")
+                mismatch -= 1
+                self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
                 continue
 
             _delta_i, _delta_j = _ret
@@ -463,17 +468,21 @@ class Controller(State, FeatureTracker):
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
 
+        if mismatch == 0:
+            self.reset_tracking
+            self.u = np.zeros(6)
+            return
 
         # # BEGIN DEBUG
         # if self.label != 0:
         #     self.u = np.zeros(6)
         #     return
-        # # END DEBUG
 
-        if _n != 0:
-            self.get_logger().info(f"Neig:{_n}")
-            self._u /= _n
+        # if _n != 0:
+        #     self.get_logger().info(f"Neig:{_n}")
+        #     self._u /= _n
         # self._u = np.zeros(6)
+        # # END DEBUG
         #   6DOF
         _w = self.R_cam @ self._u[3:]
         _v = (self.R_cam @ self._u[:3]).reshape(-1)

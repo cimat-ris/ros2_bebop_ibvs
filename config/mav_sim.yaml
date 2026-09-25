@@ -80,6 +80,10 @@ perspectiveRemovePixelPerCell: 10
 perspectiveRemoveIgnoredMarginPerCell: 0.2
 # ref_image: ground_reference_arucos.png
 
+# --------------------------------------------------------
+#   PLOT CONFIGURATION
+# --------------------------------------------------------
 
-
+type: features
+# type: arucos
 
