@@ -84,6 +84,7 @@ perspectiveRemoveIgnoredMarginPerCell: 0.2
 #   PLOT CONFIGURATION
 # --------------------------------------------------------
 
-type: features
+system: mav
+point_type: features
 # type: arucos
 
