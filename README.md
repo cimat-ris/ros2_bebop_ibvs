@@ -108,6 +108,7 @@ mkdir -p ~/ws_bebop/src
 cd ws_bebop/src
 ```
 
+## Clone and install
 Clone the package into your catkin workspace (in src folder): 
 ```bash
 cd
@@ -142,25 +143,7 @@ ros2 launch ros2_bebop_ibvs single_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
-ros2 topic pub  /state std_msgs/Int32 "{data: 2}" --once #  TAKEOFF
-ros2 topic pub  /state std_msgs/Int32 "{data: 3}" --once #  LAND
-ros2 topic pub  /state std_msgs/Int32 "{data: 1}" --once #  CONTROL
-ros2 topic pub  /state std_msgs/Int32 "{data: 4}" --once #  STOP
-ros2 topic pub  /state std_msgs/Int32 "{data: 5}" --once #  INITAL CONDITION
-ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
-ros2 topic pub --once  /state std_msgs/Int32 "{data: 7}"  #  Tracking reset
-```
-
-For simplicity the following aliases can be defined
-```bash
-alias takeoff="ros2 topic pub  /state std_msgs/Int32 \"{data: 2}\" --once" #  TAKEOFF
-alias land="ros2 topic pub  /state std_msgs/Int32 \"{data: 3}\" --once" #  LAND
-alias control="ros2 topic pub  /state std_msgs/Int32 \"{data: 1}\" --once" #  CONTROL
-alias stop="ros2 topic pub  /state std_msgs/Int32 \"{data: 4}\" --once" #  STOP
-alias init="ros2 topic pub  /state std_msgs/Int32 \"{data: 5}\" --once" #  INITAL CONDITION
-alias ref="ros2 topic pub  /state std_msgs/Int32 \"{data: 6}\" --once" #  REFERENCE CONDITION
-alias trackr="ros2 topic pub  /state std_msgs/Int32 \"{data: 7}\" --once" #  Reset tracking points
-
+takeoff # View available controllers
 ```
 
 
@@ -172,6 +155,14 @@ ros2 launch   ros2_bebop_ibvs mav_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
+takeoff # View available controllers
+```
+
+
+# Controllers
+
+
+```bash
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 2}"  #  TAKEOFF
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 3}"  #  LAND
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 1}"  #  CONTROL
@@ -179,9 +170,10 @@ ros2 topic pub --once  /state std_msgs/Int32 "{data: 4}"  #  STOP
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 5}"  #  INITAL CONDITION
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 6}"  #  REFERENCE CONDITION
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 7}"  #  Tracking reset
+ros2 topic pub --once  /state std_msgs/Int32 "{data: 8}"  #  HOLD
 ```
 
-For simplicity the following aliases can be defined
+For simplicity the following aliases can be defined to work with all controllers
 ```bash
 alias takeoff="ros2 topic pub --once /state std_msgs/Int32 \"{data: 2}\" " #  TAKEOFF
 alias land="ros2 topic pub --once /state std_msgs/Int32 \"{data: 3}\" " #  LAND
@@ -190,6 +182,7 @@ alias stop="ros2 topic pub --once /state std_msgs/Int32 \"{data: 4}\" " #  STOP
 alias init="ros2 topic pub --once /state std_msgs/Int32 \"{data: 5}\" " #  INITAL CONDITION
 alias ref="ros2 topic pub --once /state std_msgs/Int32 \"{data: 6}\" " #  REFERENCE CONDITION
 alias trackr="ros2 topic pub --once /state std_msgs/Int32 \"{data: 7}\" " #  Reset tracking points
+alias hold="ros2 topic pub --once /state std_msgs/Int32 \"{data: 8}\" " #  HOLD
 ```
 
 
@@ -290,22 +283,19 @@ The following utility plots:
 
 Arguments:
 + directory (non optional) = were data is stored and output will be placed
-+ pose = 4 coordinate state for the pose where the reference is taken
 
 To run:
 ```
-$ python3 scripts/plot_data_desc.py -h
-usage: python3 plot_data_desc.py [-h] [--pose POSE POSE POSE POSE] directory
+$ python3 scripts/plot_mav_desc.py -h
+usage: python3 plot_mav_desc.py [-h] [--config CONFIG] directory
 
-Plotting single camera experiment data
+Plotting multiple agent experiment data
 
 positional arguments:
-  directory             Directory name (default output/)
+  directory        Directory name (default output/)
 
 options:
-  -h, --help            show this help message and exit
-  --pose POSE POSE POSE POSE
-                        Reference pose [x, y, z, yaw (degs)] default [0., 0., 3., 0]
-
+  -h, --help       show this help message and exit
+  --config CONFIG  File containign the configurations (defaultconfig/mav_sim.yaml)
 
 ```

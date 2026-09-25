@@ -18,6 +18,7 @@ STOP = 4
 INITCOND = 5
 REFERENCE = 6
 RESETVIS = 7
+HOLD = 8
 
 markers_list = ["4X4_50" ,
         "4X4_100" ,
@@ -290,7 +291,7 @@ class FeatureTracker(ImageProc):
                     good_matches.append(m)
 
         if len(good_matches) <= self.matcher_threshold:
-            super().get_logger().warning(f"No Neighboring Matches available {len(good_matches)} of {desc.shape}")
+            super().get_logger().warning(f"No Neighboring Matches available ({len(good_matches)} of {desc.shape})")
             return None
 
         _delta_i = np.float32([
@@ -600,6 +601,10 @@ class State(Node):
             self.get_logger().info("State change: LAND")
             self.state = self.s_land
             return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
@@ -666,6 +671,10 @@ class State(Node):
             self.get_logger().info("State change: LAND")
             self.state = self.s_land
             return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
@@ -726,6 +735,10 @@ class State(Node):
             self.get_logger().info("State change: LAND")
             self.state = self.s_land
             return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
@@ -756,6 +769,10 @@ class State(Node):
             self.get_logger().info("State change: IDLE")
             self.state = self.s_idle
             return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
@@ -780,6 +797,10 @@ class State(Node):
             self.get_logger().info("State change: LAND")
             self.state = self.s_land
             return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
@@ -793,6 +814,36 @@ class State(Node):
             self.get_logger().info("State change: REFERENCE")
             self.state = self.s_reference
             self.init_complete = False
+    def s_hold(self):
+
+        self.cmd_pub.publish(Twist())
+
+        if self.new_state == CONTROL and self.takeoff_complete:
+            self.get_logger().info("State change: CONTROL")
+            self.state = self.s_control
+            return
+        if self.new_state == CONTROL and  not self.takeoff_complete:
+            self.get_logger().info("Waiting for TAKEOFF to finish, can not change to CONTROL")
+            self.new_state = TAKEOFF
+            return
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+            return
 
     def s_stop(self):
         self.cmd_pub.publish(Twist())
