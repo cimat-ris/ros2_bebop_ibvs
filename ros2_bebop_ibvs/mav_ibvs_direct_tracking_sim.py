@@ -216,12 +216,13 @@ class Controller(State, FeatureTracker):
                        [-1., 0., 0.],
                        [0., 0., -1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
+        # self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
-        self.pref[:,:3] /= self.img_depth
+        self.pref[:,:3] = self.pref[:,:3] / self.reference_pose[:,2].reshape((-1,1))
         self.pref[self.pref[:,3] < -np.pi, 3] += np.pi
         self.pref[self.pref[:,3] >  np.pi, 3] -= np.pi
-        print(self.pref)
+        self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.reference_pose = self.reference_pose[self.label]
 
@@ -473,8 +474,8 @@ class Controller(State, FeatureTracker):
             self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)
             _n += 1.
 
-            if self.label == 0:
-                self.get_logger().info(str(self.error[j]))
+            # if self.label == 0:
+            #     self.get_logger().info(str(self.error[j]))
 
             # TODO image draw
             if self.m_image is None:
@@ -510,6 +511,7 @@ class Controller(State, FeatureTracker):
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
+        self.get_logger().info(str(self.u))
         #   4DOF
         # _w = self.R_cam @ np.array([0.,self._u[3],0.])
         # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
@@ -575,6 +577,14 @@ class Controller(State, FeatureTracker):
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
+            self.custom_draw_matching(self.m_image,
+                        # m_delta_i.T,
+                        # complement.T,
+                        _delta_i,
+                        complement,
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
 
         if mismatch == 0:
             self.reset_tracking = True
@@ -585,16 +595,19 @@ class Controller(State, FeatureTracker):
         mask = np.logical_or(self.error[self.label][0,:] !=0.,
                              self.error[self.label][1,:] !=0.)
 
-        self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        self.L = interaction_matrix_xyz(self.points, self.img_depth)
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
             self._u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)
         # BEGIN debug
         # if self.label == 0:
+        #     self._u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -654,6 +667,7 @@ class Controller(State, FeatureTracker):
             self.data2save = True
             self.save_data()
 
+        # self.u = np.zeros(6)
         super().s_control()
 
 
