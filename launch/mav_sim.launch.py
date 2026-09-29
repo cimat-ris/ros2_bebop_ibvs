@@ -19,7 +19,8 @@ def generate_launch_description():
     rd_template = Template(robot_desc) # convert string in template
 
     #   Configurations
-    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mav_sim.yaml')
+    # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mav_sim.yaml')
+    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mav_sim_tracking.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
     config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', config['ref_prefix'])

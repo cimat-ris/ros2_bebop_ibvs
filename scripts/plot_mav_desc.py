@@ -59,8 +59,24 @@ class Ploter():
         with open(name, 'r') as file:
             _dict = yaml.safe_load(file)
 
-            self.n_agents = _dict['n_agents']
-            pd = np.array(_dict['pd'])
+        self.n_agents = _dict['n_agents']
+        pd = np.array(_dict['pd'])
+
+        if 'vel_limits' in _dict:
+            self.vel_limits = _dict['vel_limits']
+        else:
+            self.vel_limits = [-.5, .5]
+
+        if 'error_limits' in _dict:
+            self.error_limits = _dict['error_limits']
+        else:
+            self.error_limits = [-1., 1.]
+
+        if 'camera_angle' in _dict:
+            self.camera_angle = eval(_dict['camera_angle'])
+        else:
+            self.camera_angle = 0.
+
 
 
         pd = pd.reshape((-1,4))
@@ -69,13 +85,15 @@ class Ploter():
         pd = (pd[:,:3],  np.zeros((n,2)), pd[:,3].reshape((-1,1)))
         self.pd = np.concatenate(pd, axis = 1)
         # pd[:,3] = pi/2.
-        self.pd[:,4] = pi
+        self.pd[:,4] = self.camera_angle
         self.pd = self.pd.T
 
 
         self.error = [None] * self.n_agents
         self.position = [None] * self.n_agents
         self.log = [None] * self.n_agents
+
+        self.arucos = [None] * self.n_agents
 
         self.joined_error =  None
 
@@ -264,8 +282,51 @@ class Ploter():
                                 error[i]["t"] = [t - t0 for t in error[i]["t"]]
                         self.error[label][k] = error
 
-        t0 = None # Used for integral time phasing
-        if any([not _dict is None for _dict in self.error[label] ]):
+            t0 = None # Used for integral time phasing
+            name = os.path.join(self.directory ,f"error_{label}.dat")
+            if os.path.exists(name):
+                length = os.path.getsize(name)
+                if length > 0:
+                    with open(name, 'rb') as fileH:
+                        size = 3*b_double + b_int
+                        rows = (length) / size
+                        rows = int(np.floor(rows))
+
+                        error = {}
+
+                        for i in range (rows):
+                            time = np.fromfile(fileH,
+                                                dtype = np.float64,
+                                                count = 1)
+                            time = time[0]
+                            idx = np.fromfile(fileH,
+                                                dtype = np.int64,
+                                                count = 1)
+                            idx = idx[0]
+                            _error = np.fromfile(fileH,
+                                                dtype = np.float64,
+                                                count = 2)
+                            all_idx.add(idx)
+
+                            if (any(_error > 10)):
+                                print(_error)
+                            if idx in error:
+                                error[idx]["t"].append(time)
+                                error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
+                            else:
+                                _d = {"t":[time], "v":_error}
+                                error[idx] = _d
+
+                        t0 = [ error[key]["t"][0] for  key in error]
+                        t0 = min(t0)
+                        for i in error:
+                            error[i]["v"] = error[i]["v"].reshape((-1,2))
+                            # error[i]["v"] = error[i]["v"].T
+                            error[i]["t"] = [t - t0 for t in error[i]["t"]]
+                    self.error[label][label] = error
+
+
+        if any([not _dict is None for _dict in self.error[label] ]) and self.error[label][label] is None:
             #   Sum error
             all_idx = list(all_idx)
             all_idx.sort()
@@ -274,6 +335,8 @@ class Ploter():
             t = set()
             for _dict in self.error[label]: #   For each agent
                 # print(_dict)
+                if _dict is None:
+                    continue
                 for idx in _dict:   # for each idx
                     # print(idx)
                     for _t in _dict[idx]['t']: # For each time step
@@ -282,20 +345,20 @@ class Ploter():
             t.sort()    #   Just in case
 
             # Sum error
-            new_error = np.zeros((len(t),2*len(all_idx)))
-            for i in range(len(t)):
-                _v = np.zeros(2*len(all_idx)) # _v the error at a time step
-                for _dict in self.error[label]: #   For each agent
-                    for idx in _dict:   # for each aruco
-                        if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
-                            t_id = _dict[idx]['t'].index(t[i])
-                            v_id = all_idx.index(idx)
-                            _v[v_id*2 : v_id*2+2] += _dict[idx]['v'][t_id]
-                new_error[i,:] = _v # Tal vez copy
-            t0 = t[0]
-            self.error[label] = {'t': [_t-t0 for _t in t], 'v': new_error}
-        else:
-            self.error[label] = None
+            if self.error[label][label] is None:
+                new_error = np.zeros((len(t),2*len(all_idx)))
+                for i in range(len(t)):
+                    _v = np.zeros(2*len(all_idx)) # _v the error at a time step
+                    for _dict in self.error[label][label]: #   For each agent
+                        for idx in _dict:   # for each aruco
+                            if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
+                                t_id = _dict[idx]['t'].index(t[i])
+                                v_id = all_idx.index(idx)
+                                _v[v_id*2 : v_id*2+2] += _dict[idx]['v'][t_id]
+                    new_error[i,:] = _v # Tal vez copy
+                t0 = t[0]
+                self.error[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
+
 
         self.error_int = [None]*self.n_agents
         # all_idx = set()
@@ -408,21 +471,32 @@ class Ploter():
             print("Ploting VELOCITIES ")
             plotVel(self.directory, self.velocities,
                     f"Velocities{sufx}.pdf",
-                    lims = [-.5,.5])
+                    lims = self.vel_limits)
         if not self.velocities_log[0] is None:
             print("Ploting VELOCITIES Log Proportional ")
-            plotVel(self.directory, self.velocities_log[0], f"Velocities_prop{sufx}.pdf")
+            plotVel(self.directory, self.velocities_log[0],
+                    f"Velocities_prop{sufx}.pdf",
+                    lims = self.vel_limits)
         # if not velocities_log[1] is None:
         #     print("Ploting VELOCITIES Log Integral ")
         #     plotVel(self.directory, velocities_log[1], f"Velocities_int{sufx}.pdf")
         if not self.features is None:
             print("Ploting Features")
             plotFeat(self.directory,  self.features, f"Features{sufx}.pdf")
-        # TODO
-        if not self.error[i] is None:
+
+        if not self.error[i][i] is None:
             print("Ploting Error")
-            print(self.error[i])
-            plotError(self.directory, self.error[i], f"Error_feature{sufx}.pdf", lims = [-1,1])
+            plotError(self.directory,
+                      self.error[i][i],
+                      f"Error_feature{sufx}.pdf",
+                      lims = self.error_limits)
+            for j in range(self.n_agents):
+                if j != i and not self.error[i][j] is None:
+                    # print(self.error[i][j])
+                    plotError(self.directory,
+                            self.error[i][j],
+                            f"Error_feature{sufx}_{j}.pdf",
+                            lims = self.error_limits)
             # print(error[i])
         # if not error_int is None:
         #     print("Ploting Integral Error")
@@ -436,39 +510,36 @@ class Ploter():
                 print("Ploting LOG")
                 plotLog(self.directory, self.log[j], f"LOG_SVD_D{sufx}_{j}.pdf")
 
+    #   Only for arucos
+    #   TODO: Adapt
     def join_error(self):
 
         if any([(i is None) for i in self.error]):
             return
 
         #   Join time
-        t = error[0]['t']
-        new_error = error[0]['v'].copy()
-        idx = [0 for i in range(len(error))]
+        t = self.error[0]['t']
+        new_error = self.error[0]['v'].copy()
+        idx = [0 for i in range(len(self.error))]
         for i in range(len(t)):
-            for j in range(1,len(error)):
-                # print( error[j])
-                # print( error[j]['t'])
-                # print( j)
-                # print( idx[j])
-                # print( error[j]['t'][idx[j]])
-                while idx[j] < len(error[j]['t']) and error[j]['t'][idx[j]] < t[i] :
+            for j in range(1,len(self.error)):
+                while idx[j] < len(self.error[j]['t']) and self.error[j]['t'][idx[j]] < t[i] :
                     idx[j] += 1
 
                 if idx[j] == 0:
-                    new_error[i,:] +=  error[j]['v'][0]
-                elif idx[j] >= len(error[j]['t']):
-                    new_error[i,:] +=  error[j]['v'][-1]
+                    new_error[i,:] +=  self.error[j]['v'][0]
+                elif idx[j] >= len(self.error[j]['t']):
+                    new_error[i,:] +=  self.error[j]['v'][-1]
                 else:
-                    delta = t[i] - error[j]['t'][idx[j]-1]
-                    delta /= error[j]['t'][idx[j]] - error[j]['t'][idx[j]-1]
-                    new_error[i,:] +=  error[j]['v'][idx[j]-1]
-                    new_error[i,:] +=  delta * (error[j]['v'][idx[j]] - error[j]['v'][idx[j]-1] )
+                    delta = t[i] - self.error[j]['t'][idx[j]-1]
+                    delta /= self.error[j]['t'][idx[j]] - self.error[j]['t'][idx[j]-1]
+                    new_error[i,:] +=  self.error[j]['v'][idx[j]-1]
+                    new_error[i,:] +=  delta * (self.error[j]['v'][idx[j]] - self.error[j]['v'][idx[j]-1] )
 
 
         self.joined_error =  {'t': t, 'v': new_error}
 
-    def get_formation_error(self, name):
+    def get_formation_error(self):
 
         if any([(i is None) for i in self.position]):
             return None
@@ -499,10 +570,14 @@ class Ploter():
 
             error[i,:] =  error_state_6(self.pd,  agents)
 
-        #   plot last
-        error_state_6(self.pd,  agents, name = name)
+        #   For plot
+        self.agents = agents
+        # error_state_6(self.pd,  agents, name = name)
+        self.formation_error = {'t': t, 'v': error}
 
-        return {'t': t, 'v': error}
+
+    def plot_error_state(self, name):
+        error_state_6(self.pd,  self.agents, name = name)
 
     def fit_position(self):
 
@@ -511,28 +586,35 @@ class Ploter():
             steps = self.position[i].shape[1]
             _p = (self.position[i][:4,:],  np.zeros((2,steps)), self.position[i][4,:].reshape((1,-1)))
             _p = np.concatenate(_p)
-            _p[4,:] = -pi/2.
+            _p[4,:] = -self.camera_angle
             _p[6,:] -= pi
             position[i] = _p
-        return position
+        self.position_fited = position
+
+    def proc_joined(self):
+
+        if any([not x is None for x in self.arucos]):
+            self.join_error()
+
+        self.get_formation_error()
+        self.fit_position()
 
     def plot_joined(self):
 
-        self.join_error()
         if not self.joined_error is None:
             print("Ploting Joined Error")
             plotError(self.directory, self.joined_error, f"Error_joined.pdf")
 
         name = os.path.join(self.directory,'Error_final.pdf')
-        formation_error = self.get_formation_error(name)
-        if not formation_error is None:
+        self.plot_error_state( name = name)
+        # formation_error = self.get_formation_error(name)
+        if not self.formation_error is None:
             print("Ploting Joined Error")
-            plotError(self.directory, formation_error, f"Formation_error.pdf", th = 0.0)
+            plotError(self.directory, self.formation_error, f"Formation_error.pdf", th = 0.0)
 
-        position= self.fit_position()
-        if not any([( i is None) for i in position]):
+        if not any([( i is None) for i in self.position_fited]):
             print("Ploting 3D")
-            plot3D(self.directory, position, self.pd, f"3DPlot.pdf")
+            plot3D(self.directory, self.position_fited, self.pd, f"3DPlot.pdf")
 
 #   AUXILIARY FUNCTIONS
 
@@ -848,10 +930,22 @@ def plotError(directory, error, name, th = 0., lims = None):
 
     fig, ax = plt.subplots( figsize=(6,2))
     fig.suptitle("Error")
-    time = np.array(error["t"])
-    _error = np.array(error["v"].T).copy()
-    plot_time(ax, time,_error, th )
-    # ax.set_ylim([-.5,.5])
+
+    if "t" in error :
+        time = np.array(error["t"])
+        _error = np.array(error["v"].T).copy()
+        plot_time(ax, time, _error, th)
+    else:
+        offset = 0
+        for k in error:
+            # print(_dict)
+            time = np.array(error[k]["t"])
+            _error = np.array(error[k]["v"].T).copy()
+            plot_time(ax,
+                        time,_error,
+                        th, color_offset = offset )
+            offset += _error.shape[0]
+
     if not lims is None:
         ax.set_ylim(lims)
     name = os.path.join(directory ,name)
@@ -1011,6 +1105,7 @@ def main(arg):
     for i in range(ploter.n_agents):
         ploter.read_data(i)
         ploter.plot_single(i)
+    ploter.proc_joined()
     ploter.plot_joined()
 
 

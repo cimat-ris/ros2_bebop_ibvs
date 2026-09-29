@@ -1,6 +1,10 @@
 # Requirements
 
-## Installing ROS Rolling on ubuntu 24.04 LTS (Noble Numbat)
+## Installing ROS Rolling on ubuntu
+
+Tested:
++ Ubuntu 22 Jammy Jellyfish
++ Ubuntu 24 Noble Numbat
 
 Set locale
 ```bash
@@ -40,8 +44,7 @@ sudo apt install ros-dev-tools
 sudo apt-get install ros-rolling-rqt-image-view
 ```
 
-
-Install gazebo
+## Install gazebo
 ```bash
 
 # Gazebo
@@ -49,12 +52,11 @@ sudo curl https://packages.osrfoundation.org/gazebo.gpg --output /usr/share/keyr
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-prerelease $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-prerelease.list > /dev/null
 
-
 sudo apt-get update
 sudo apt-get install gz-jetty  ros-rolling-ros-gz-bridge  ros-rolling-ros-gz-sim
 ```
 
-Install opencv from source (version 4.x):
+## Install opencv from source (version 4.x):
 <https://docs.opencv.org/4.12.0/d0/d3d/tutorial_general_install.html>
 
 `/usr/local` address wil be used, if reuired, change ir at cmake config:
@@ -127,41 +129,27 @@ colcon build
 source ~/ws_bebop/install/setup.bash
 ```
 
+## Final configurations
+
 Environment variables (have to be defined for each session)
 ```bash
 export GZ_SIM_RESOURCE_PATH="$HOME/ws_bebop/src/ros2_bebop_ibvs/worlds:$HOME/ws_bebop/src/ros/models:"
 export GZ_VERSION=jetty
 ```
 
-
-
-# Simulation or a single agent Image Based Controllers
+# Run simulations
 
 ```bash
-# screen 1 (choose one)
+# screen 1 (choose single or mav to run)
 ros2 launch ros2_bebop_ibvs single_sim.launch.py
+ros2 launch ros2_bebop_ibvs mav_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
-takeoff # View available controllers
+takeoff # View available commands
 ```
 
-
-# Simulation of multiple agents Image Based Controllers - Formation Control
-
-```bash
-# screen 1
-ros2 launch   ros2_bebop_ibvs mav_sim.launch.py
-# screen 2
-ros2 run rqt_image_view rqt_image_view
-# screen 3
-takeoff # View available controllers
-```
-
-
-# Controllers
-
-
+Commands:
 ```bash
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 2}"  #  TAKEOFF
 ros2 topic pub --once  /state std_msgs/Int32 "{data: 3}"  #  LAND
@@ -185,9 +173,7 @@ alias trackr="ros2 topic pub --once /state std_msgs/Int32 \"{data: 7}\" " #  Res
 alias hold="ros2 topic pub --once /state std_msgs/Int32 \"{data: 8}\" " #  HOLD
 ```
 
-
 #   Visual servos with real Bebop
-
 
 ```bash
 #   Screen 1
@@ -230,7 +216,6 @@ ps | grep dragon
 # Reiniciar driver
 /usr/bin/dragon-prog -S 0 &
 ```
-
 
 #   Plot Aruco-data
 

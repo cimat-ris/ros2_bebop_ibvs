@@ -174,11 +174,18 @@ class ImageProc(Node):
 
         for i in range(points1.shape[0]):
             # Draw the line
-            cv2.line(m_image, _points1[i,:].astype(int), _points2[i,:].astype(int), color2, line_thickness)
+            cv2.line(m_image,
+                     _points1[i,:].astype(int),
+                     _points2[i,:].astype(int),
+                     color2, line_thickness)
 
             # Draw points
-            cv2.circle(m_image, _points1[i,:].astype(int), point_radius, color1, -1)
-            cv2.circle(m_image, _points2[i,:].astype(int), int(0.5*point_radius), color2, -1)
+            cv2.circle(m_image,
+                       _points1[i,:].astype(int),
+                       point_radius, color1, -1)
+            cv2.circle(m_image,
+                       _points2[i,:].astype(int),
+                       int(0.5*point_radius), color2, -1)
 
     def custom_draw(self, m_image, points,
                          color=(0, 0, 255),
@@ -234,8 +241,8 @@ class FeatureTracker(ImageProc):
     def config_reference(self, ref_name = None):
 
         self.lk_params = dict(winSize=(15, 15),
-                            maxLevel=2,
-                            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+            maxLevel=2,
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
         self.orb = cv2.ORB_create(
             nfeatures    = int( self.nfeatures ),
@@ -277,11 +284,53 @@ class FeatureTracker(ImageProc):
 
 
 
-    def match(self, desc, deltas):
+    # def match(self, desc, deltas):
+    #
+    #     #   match
+    #     knn_matches = self.flann.knnMatch(desc,
+    #                             self.desc_self, k=2)
+    #     # Lowe ratio test
+    #     good_matches = []
+    #     for matches in knn_matches:
+    #         if len(matches) == 2:
+    #             m, n = matches
+    #             if m.distance < self.flann_ratio * n.distance:
+    #                 good_matches.append(m)
+    #
+    #     if len(good_matches) <= self.matcher_threshold:
+    #         super().get_logger().warning(f"No Neighboring Matches available ({len(good_matches)} of {desc.shape})")
+    #         return None
+    #
+    #     _delta_i = np.float32([
+    #         self.points[:,m.trainIdx]
+    #         for m in good_matches
+    #     ])
+    #     _delta_j = np.float32([
+    #         deltas[:,m.queryIdx]
+    #         for m in good_matches
+    #     ])
+    #
+    #
+    #     _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
+    #     _mask = _mask.reshape(-1)
+    #
+    #     if _mask.sum() <= self.matcher_threshold:
+    #         super().get_logger().warning("No Neighboring Matches available (RANSAC)")
+    #         return None
+    #
+    #     _delta_i = _delta_i[_mask == 1,:].T
+    #     _delta_j = _delta_j[_mask == 1,:].T
+    #     _delta_i = _delta_i.reshape((2,-1))
+    #     _delta_j = _delta_j.reshape((2,-1))
+    #
+    #     return _delta_i, _delta_j
+
+    def match(self, desc, deltas, enable_ransac = True):
 
         #   match
         knn_matches = self.flann.knnMatch(desc,
                                 self.desc_self, k=2)
+
         # Lowe ratio test
         good_matches = []
         for matches in knn_matches:
@@ -291,8 +340,11 @@ class FeatureTracker(ImageProc):
                     good_matches.append(m)
 
         if len(good_matches) <= self.matcher_threshold:
-            super().get_logger().warning(f"No Neighboring Matches available ({len(good_matches)} of {desc.shape})")
+            _s = f"No Neighboring Matches available ({len(good_matches)} of {desc.shape})"
+            super().get_logger().warning(_s)
             return None
+
+        idx = [m.trainIdx for m in good_matches]
 
         _delta_i = np.float32([
             self.points[:,m.trainIdx]
@@ -303,8 +355,13 @@ class FeatureTracker(ImageProc):
             for m in good_matches
         ])
 
+        if not enable_ransac:
+            return _delta_i, _delta_j, idx
 
-        _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
+        #   RANSAC FILTER
+        _, _mask = cv2.findHomography(_delta_i,
+                                      _delta_j,
+                                      cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
         if _mask.sum() <= self.matcher_threshold:
@@ -316,7 +373,13 @@ class FeatureTracker(ImageProc):
         _delta_i = _delta_i.reshape((2,-1))
         _delta_j = _delta_j.reshape((2,-1))
 
-        return _delta_i, _delta_j
+        _idx = []
+        for i, m in zip(idx, _mask):
+            if m==1:
+                _idx.append(i)
+
+        # super().get_logger().info(f"mtches {_mask.sum()}")
+        return _delta_i, _delta_j, _idx
 
     def img_proc(self, image):
 
@@ -335,7 +398,8 @@ class FeatureTracker(ImageProc):
 
 
 
-        if status is None or self.p.shape[0] < self.detect_threshold or self.reset_tracking:
+        if status is None or any ([self.p.shape[0] < self.detect_threshold,
+                                    self.reset_tracking]):
             super().get_logger().info("Reseting tracking.")
             self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
             if len(self.kp) <4:
@@ -533,6 +597,8 @@ class State(Node):
         self.landing_threshold = super().get_parameter('landing_threshold').value
         self.takeoff_height = super().get_parameter('takeoff_height').value
         self.gain_takeoff = super().get_parameter('gain_takeoff').value
+
+        self.u = np.zeros(6)
 
     #   Initial configuration before loop
     def create_publishers(self, qos):
@@ -777,12 +843,12 @@ class State(Node):
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
 
-    def s_control(self, u):
+    def s_control(self):
 
-        self.m_vel.linear.x = float(u[0])
-        self.m_vel.linear.y = float(u[1])
-        self.m_vel.linear.z = float(u[2])
-        self.m_vel.angular.z = float(u[5])
+        self.m_vel.linear.x = float(self.u[0])
+        self.m_vel.linear.y = float(self.u[1])
+        self.m_vel.linear.z = float(self.u[2])
+        self.m_vel.angular.z = float(self.u[5])
 
         try:
             self.cmd_pub.publish(self.m_vel)
