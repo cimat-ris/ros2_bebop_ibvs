@@ -367,7 +367,7 @@ class Controller(State, FeatureTracker):
                         data += tuple(self.error[j][:,i].T.reshape(-1))
                         binary = struct.pack('didd', *data)
                         f.write(binary)
-            if not self.ids is None:
+            if not self.error[self.label] is None:
                 with open(self.error_d[self.label], 'ab') as f:
                     for i, m in enumerate( self.ids):
 
@@ -554,8 +554,8 @@ class Controller(State, FeatureTracker):
 
             # # BEGIN debug
             # if self.label == 0:
-            #     self.get_logger().info(str(self.error[j]))
-            #     self.get_logger().info(str(idx))
+            #     # self.get_logger().info(str(self.error[j]))
+            #     # self.get_logger().info(str(idx))
             #     self.get_logger().info(str(self.error[self.label]))
             #
             # # END debug
@@ -565,12 +565,13 @@ class Controller(State, FeatureTracker):
             # TODO image draw
             if self.m_image is None:
                 continue
-
+            # self.get_logger().info(str(complement))
             self.custom_draw_matching(self.m_image,
                         # m_delta_i.T,
                         # complement.T,
                         _delta_i,
-                        complement,
+                        # complement,
+                        _delta_j,
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)

@@ -172,7 +172,7 @@ class ImageProc(Node):
             _points1 =  points1.T
             _points2 =  points2.T
 
-        for i in range(points1.shape[0]):
+        for i in range(_points1.shape[0]):
             # Draw the line
             cv2.line(m_image,
                      _points1[i,:].astype(int),

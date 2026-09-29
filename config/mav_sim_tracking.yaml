@@ -51,8 +51,8 @@ pd: [0., -1.,2., 0,
 #     0, 1, 1, 0]
 # tracking2_matchImg0_02
 p0: [ 0.2, -1., 2.5,    0,
-      0.8, -0.8, 2.3, -0.1,
-      0.1, 0.8, 2.3, 0.2,
+      0.8, -0.8, 2.3, 0.1,
+      0.1, 0.8, 2.3, -0.2,
       0.8,  0.8,  2.5,    0]
 
 L: [0, 1, 1, 0,
@@ -68,8 +68,10 @@ output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
 #   Control
 control: "mav_ibvs_direct_tracking_sim"
 # control: "mav_ibvs_direct_matching_sim"
-gain: .08
-gain_w: 1.2
+gain: .1
+# gain: .08
+gain_w: 1.
+# gain_w: 1.2
 img_depth: 2.3
 polar: false
 

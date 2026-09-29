@@ -96,6 +96,7 @@ class Ploter():
         self.arucos = [None] * self.n_agents
 
         self.joined_error =  None
+        self.formation_error = None
 
     def read_data(self, label):
 
@@ -326,7 +327,7 @@ class Ploter():
                     self.error[label][label] = error
 
 
-        if any([not _dict is None for _dict in self.error[label] ]) and self.error[label][label] is None:
+        if self.error[label][label] is None and any([not _dict is None for _dict in self.error[label] ]) :
             #   Sum error
             all_idx = list(all_idx)
             all_idx.sort()
@@ -345,19 +346,19 @@ class Ploter():
             t.sort()    #   Just in case
 
             # Sum error
-            if self.error[label][label] is None:
-                new_error = np.zeros((len(t),2*len(all_idx)))
-                for i in range(len(t)):
-                    _v = np.zeros(2*len(all_idx)) # _v the error at a time step
-                    for _dict in self.error[label][label]: #   For each agent
+            new_error = np.zeros((len(t),2*len(all_idx)))
+            for i in range(len(t)):
+                _v = np.zeros(2*len(all_idx)) # _v the error at a time step
+                for _dict in self.error[label]: #   For each agent
+                    if not _dict is None:
                         for idx in _dict:   # for each aruco
                             if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
                                 t_id = _dict[idx]['t'].index(t[i])
                                 v_id = all_idx.index(idx)
                                 _v[v_id*2 : v_id*2+2] += _dict[idx]['v'][t_id]
-                    new_error[i,:] = _v # Tal vez copy
-                t0 = t[0]
-                self.error[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
+                new_error[i,:] = _v # Tal vez copy
+            t0 = t[0]
+            self.error[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
 
 
         self.error_int = [None]*self.n_agents
@@ -463,17 +464,20 @@ class Ploter():
 
         sufx = "" if i is None else "_"+str(i)
 
+        if not i is None:
+            print(f"\tPloting Agent {i}")
+
         if not self.n_e is None:
-            print("Ploting  ")
+            print("Ploting Error Norm")
             # plotNErr(self.directory, n_e, f"Error{sufx}.pdf")
             plotError(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.1)
         if not self.velocities is None:
-            print("Ploting VELOCITIES ")
+            print("Ploting Velocities ")
             plotVel(self.directory, self.velocities,
                     f"Velocities{sufx}.pdf",
                     lims = self.vel_limits)
         if not self.velocities_log[0] is None:
-            print("Ploting VELOCITIES Log Proportional ")
+            print("Ploting Velocities (Log Proportional) ")
             plotVel(self.directory, self.velocities_log[0],
                     f"Velocities_prop{sufx}.pdf",
                     lims = self.vel_limits)
@@ -507,7 +511,7 @@ class Ploter():
 
         for j in range(self.n_agents):
             if not self.log[i][j] is None:
-                print("Ploting LOG")
+                print("Ploting Log")
                 plotLog(self.directory, self.log[j], f"LOG_SVD_D{sufx}_{j}.pdf")
 
     #   Only for arucos
