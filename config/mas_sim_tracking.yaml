@@ -66,12 +66,12 @@ save_log: false
 output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
 
 #   Control
-control: "mav_ibvs_direct_tracking_sim"
-# control: "mav_ibvs_direct_matching_sim"
+control: "mas_ibvs_direct_tracking_sim"
+# control: "mas_ibvs_direct_matching_sim"
 # gain: .1
 gain: .08
-gain_w: 1.
-# gain_w: 1.2
+# gain_w: 1.
+gain_w: 1.2
 img_depth: 2.3
 polar: false
 
@@ -116,7 +116,7 @@ perspectiveRemoveIgnoredMarginPerCell: 0.2
 #   PLOT CONFIGURATION
 # --------------------------------------------------------
 
-system: mav
+system: mas
 point_type: features
 # type: arucos
 

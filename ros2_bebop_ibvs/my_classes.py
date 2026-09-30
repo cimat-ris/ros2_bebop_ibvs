@@ -205,6 +205,122 @@ class ImageProc(Node):
             cv2.circle(m_image, _points[i,:].astype(int), point_radius, color, -1)
 
 
+class ArUcoTracker(ImageProc):
+
+    def __init__(self, name):
+
+        super().__init__(name)
+        super().declare_parameter('aruco_dictionary', "4X4_1000")
+        super().declare_parameter('adaptiveThreshWinSizeMin', 141)
+        super().declare_parameter('adaptiveThreshWinSizeMax', 251)
+        super().declare_parameter('adaptiveThreshWinSizeStep', 20)
+        super().declare_parameter('adaptiveThreshConstant', 4)
+        super().declare_parameter('perspectiveRemovePixelPerCell', 10)
+        super().declare_parameter('perspectiveRemoveIgnoredMarginPerCell', 0.2)
+
+        aruco_dictionary =  super().get_parameter('aruco_dictionary').value
+
+        markers = markers_list.index(aruco_dictionary)
+        aruco_dict = cv2.aruco.getPredefinedDictionary(markers)
+        parameters = cv2.aruco.DetectorParameters()
+        # parameters.adaptiveThreshWinSizeMin = super().get_parameter('adaptiveThreshWinSizeMin').value
+        # parameters.adaptiveThreshWinSizeMax = super().get_parameter('adaptiveThreshWinSizeMax').value
+        # parameters.adaptiveThreshWinSizeStep = super().get_parameter('adaptiveThreshWinSizeStep').value
+        # parameters.adaptiveThreshConstant = super().get_parameter('adaptiveThreshConstant').value
+        # parameters.perspectiveRemovePixelPerCell = super().get_parameter('perspectiveRemovePixelPerCell').value
+        # parameters.perspectiveRemoveIgnoredMarginPerCell = super().get_parameter('perspectiveRemoveIgnoredMarginPerCell').value
+
+        self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+
+        self.p = np.zeros((2,2), dtype = np.float32)
+        self.points = None
+        self.corners_ref = None
+        self.ids_ref = None
+        self.ids = None
+        self.corners = None
+
+        self.found_arucos_w = False
+
+    def match(self, ids_m, delta_m):
+
+        _query = set(self.ids)
+        _query = _query.intersection(set(self.ids))
+        _query = _query.intersection(set(ids_m))
+        _query = list(set(_query))
+
+        # self.get_logger().info(f"idx = {_query}")
+
+        if len(_query) == 0:
+            return None
+
+        query = []
+        for q in _query:
+            k =  self.ids.index(q)
+            query = query + list(range(k*4, k*4 +4))
+
+        match = []
+        for q in _query:
+            k =  ids_m.index(q)
+            match = match + list(range(k*4, k*4 +4))
+
+        _delta_i = self.points[:,query]
+        _delta_j = delta_m[:,match]
+
+        return _delta_i, _delta_j, query
+
+    # def match_ref(self, ids_m, delta_m):
+    #
+    #     _query = set(self.ids)
+    #     _query = _query.intersection(set(self.ids))
+    #     _query = _query.intersection(set(self.ids_ref))
+    #     _query = _query.intersection(set(ids_m))
+    #     _query = list(set(_query))
+
+
+    def config_reference(self, ref_name = None):
+
+        if ref_name is None:
+
+            # TODO: keep a fized image frame for no reference
+
+            _img = cv2.imread("reference.png")
+            gray_image = cv2.cvtColor(_img, cv2.COLOR_BGR2GRAY)
+        else:
+            self.image_ref = cv2.imread(ref_name)
+            if  self.image_ref is None :
+                return False
+            gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
+            self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
+
+        return True
+
+    def img_proc(self, image):
+
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        self.corners, ids, rejected = self.detector.detectMarkers(gray_image)
+
+        if ids is None:
+            if self.found_arucos_w:
+                super().get_logger().info("No ArUcos found in received image")
+                self.found_arucos_w = False
+            self.points = None
+            self.ids = None
+            return
+        if not self.found_arucos_w:
+            super().get_logger().info("ArUcos found in received image")
+            self.found_arucos_w = True
+
+        self.p = np.concatenate(self.corners).reshape((-1,2))
+
+        # self.ids = ids.ravel().tolist()
+        self.ids = [i[0] for i in ids]
+
+
+        #   Normalize
+        self.points = self.normalize(self.p.astype(float).T)
+
+
+
 class FeatureTracker(ImageProc):
 
     def __init__(self, name):
@@ -880,17 +996,14 @@ class State(Node):
             self.get_logger().info("State change: REFERENCE")
             self.state = self.s_reference
             self.init_complete = False
+
     def s_hold(self):
 
         self.cmd_pub.publish(Twist())
 
-        if self.new_state == CONTROL and self.takeoff_complete:
+        if self.new_state == CONTROL:
             self.get_logger().info("State change: CONTROL")
-            self.state = self.s_control
-            return
-        if self.new_state == CONTROL and  not self.takeoff_complete:
-            self.get_logger().info("Waiting for TAKEOFF to finish, can not change to CONTROL")
-            self.new_state = TAKEOFF
+            self.new_state = CONTROL
             return
         if self.new_state == LAND:
             self.get_logger().info("State change: LAND")

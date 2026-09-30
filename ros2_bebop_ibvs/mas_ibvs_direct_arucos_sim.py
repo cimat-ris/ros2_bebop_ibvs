@@ -7,8 +7,7 @@ from geometry_msgs.msg import Twist, Pose
 from std_msgs.msg import Bool, Int32
 from std_srvs.srv import Empty
 from sensor_msgs.msg import Image
-# from formation_interfaces.msg import ArUco, Corners
-from formation_interfaces.msg import DeltaS
+from formation_interfaces.msg import ArUco, Corners
 
 from tf_transformations import quaternion_matrix, euler_from_matrix
 from cv_bridge import CvBridge
@@ -24,7 +23,7 @@ from .my_classes import *
 
 
 
-class Controller(State, FeatureTracker):
+class Controller(State, ArUcoTracker):
 
     def __init__(self):
         super().__init__('Controller')
@@ -43,10 +42,8 @@ class Controller(State, FeatureTracker):
         self.error = [None]*self.n_agents
         self._err_int = [None]*self.n_agents
         self.norm = -1.
-        self.lost_features = False
-        self.desc = [None]*self.n_agents
         self.deltas = [None]*self.n_agents
-        self.ids_save = [None]*self.n_agents
+        self.n_ids = [None]*self.n_agents
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -72,8 +69,8 @@ class Controller(State, FeatureTracker):
             self.config_data_storage()
 
             #   Image bridge
-            self.features_sub  = []
-            self.features_pub  = []
+            self.arucos_sub  = []
+            self.arucos_pub  = []
             img_qos = QoSProfile(depth=2)
             self.bridge = CvBridge()
 
@@ -82,16 +79,16 @@ class Controller(State, FeatureTracker):
                 self.image_recv,
                 img_qos)
             for i in self.out_neighbors:
-                _pub = self.create_publisher(DeltaS,
-                                f"/{self.robot_name}_{self.label}_{i}/desc",
+                _pub = self.create_publisher(Corners,
+                                f"/{self.robot_name}_{self.label}_{i}/arucos",
                                 qos)
-                self.features_pub.append(_pub)
+                self.arucos_pub.append(_pub)
             for i in self.in_neighbors:
-                _sub = self.create_subscription(DeltaS,
-                                f"/{self.robot_name}_{i}_{self.label}/desc",
+                _sub = self.create_subscription(Corners,
+                                f"/{self.robot_name}_{i}_{self.label}/arucos",
                                 self.delta_receiver,
                                 qos)
-                self.features_sub.append(_sub)
+                self.arucos_sub.append(_sub)
             # INIT control loop
             self.image_pub = self.create_publisher(Image,
                                                     f"/{self.robot_name}_{self.label}/matching",
@@ -264,8 +261,8 @@ class Controller(State, FeatureTracker):
         with open(self.error_d[self.label], 'w') as file:
             pass  # 'w' mode clears the file's contents
 
-        self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
-        with open(self.features_d, 'w') as file:
+        self.arucos_d = os.path.join(self.output, f"arucos_{self.label}.dat")
+        with open(self.arucos_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
 
         if self.enable_log:
@@ -291,9 +288,6 @@ class Controller(State, FeatureTracker):
 
 
     def state_changed_ibvs(self, msg):
-        if msg.data == RESETVIS:
-            self.reset_tracking = True
-            return
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -348,83 +342,103 @@ class Controller(State, FeatureTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
-        if not self.deltas is None:
+        if self.p is None:
+            return
 
-            with open(self.features_d, 'ab') as f:
-                for i, m in enumerate(self.ids):
+        with open(self.arucos_d, 'ab') as f:
+            for i, m in enumerate(self.ids):
+
+                data = (t, m)
+                data += tuple(self.p[ i*4:i*4+4,:].reshape(-1))
+                binary = struct.pack('didddddddd', *data)
+                f.write(binary)
+
+        if self.deltas is None:
+            return
+
+        for j in self.in_neighbors:
+            if self.error[j] is None:
+                continue
+            if self.n_ids[j] is None:
+                continue
+            with open(self.error_d[j], 'ab') as f:
+                for i, m in enumerate( self.n_ids[j]):
 
                     data = (t, m)
-                    data += tuple(self.p[i, :].reshape(-1))
-                    binary = struct.pack('didd', *data)
+                    data += tuple(self.error[j][:,i*4:i*4+4].T.reshape(-1))
+                    binary = struct.pack('didddddddd', *data)
                     f.write(binary)
 
-            for j in self.in_neighbors:
-                if self.ids_save[j] is None:
-                    continue
-                with open(self.error_d[j], 'ab') as f:
-                    for i, m in enumerate( self.ids_save[j]):
+        if not self.error[self.label] is None:
+            with open(self.error_d[self.label], 'ab') as f:
+                for i, m in enumerate( self.ids):
 
-                        data = (t, m)
-                        data += tuple(self.error[j][:,i].T.reshape(-1))
-                        binary = struct.pack('didd', *data)
-                        f.write(binary)
-            if not self.error[self.label] is None:
-                with open(self.error_d[self.label], 'ab') as f:
-                    for i, m in enumerate( self.ids):
-
-                        data = (t, m)
-                        data += tuple(self.error[self.label][:,i].T.reshape(-1))
-                        binary = struct.pack('didd', *data)
-                        f.write(binary)
+                    data = (t, m)
+                    data += tuple(self.error[self.label][:,i*4:i*4+4].T.reshape(-1))
+                    binary = struct.pack('didddddddd', *data)
+                    f.write(binary)
         #
 
 
     def delta_receiver(self, msg):
 
-        #   TODO: include depth
-        if self.desc_self is None:
-            return
 
         j = msg.j
-        _depth = msg.depth
+        n = msg.size
+        depth = msg.depth
 
-        _desc = np.array(msg.desc.data, dtype= self.desc_self.dtype )
-        _desc = _desc.reshape((msg.desc.rows, msg.desc.cols))
+        ids = []
+        deltas = []
 
-        _deltas = np.array(msg.deltas.data, dtype= np.float32 )
-        _deltas = _deltas.reshape((msg.deltas.rows, msg.deltas.cols))
+        for i in range(n):
+            ids.append(msg.arucos[i].id)
+            p = []
+            for j in range(4):
+                _p = [msg.arucos[i].points[j].x,
+                      msg.arucos[i].points[j].y]
+                p.append(_p)
+            deltas.append(p)
 
-        self.desc[j] = _desc
-        self.deltas[j] = _deltas
+        self.n_ids[j] = ids
+        self.deltas[j] = np.array(deltas).T
 
 
     def send_points(self):
-        if self.desc_self is None:
+        if self.ids is None:
             return
         if self.points is None:
             return
 
-        msg = DeltaS()
+        msg = Corners()
+
         msg.j = int(self.label)
-        msg.depth = float(1.)
-        # _msg = []
+        msg.size = int(len(self.ids))
+        depth = float(self.img_depth)
 
-        msg.desc.rows = int(self.desc_self.shape[0])
-        msg.desc.cols = int(self.desc_self.shape[1])
-        msg.desc.data = self.desc_self.ravel().tolist()
+        for i, _id in enumerate(self.ids):
+            p = ArUco()
+            p.id = int(_id)
+            for j in range(4):
+                p.points[j].x = float(self.points[0,i*4 + j])
+                p.points[j].y = float(self.points[1,i*4 + j])
+            msg.arucos.append(p)
 
-        msg.deltas.rows = int(self.points.shape[0])
-        msg.deltas.cols = int(self.points.shape[1])
-        msg.deltas.data = self.points.ravel().tolist()
-
-        for i in range(len(self.features_pub)):
-            self.features_pub[i].publish(msg)
+        for i in range(len(self.arucos_pub)):
+            self.arucos_pub[i].publish(msg)
 
 
     def preproc_image(self):
         if  self.cv_image is None:
             return None
         self.m_image = self.cv_image.copy()
+        if self.corners is None:
+            return
+        if self.ids is None:
+            return
+        # cv2.aruco.drawDetectedMarkers(self.m_image,
+        #                                   self.corners,
+        #                                   self.ids,
+        #                                 borderColor = (0,100,0.) )
 
     def control(self):
         _n = 0.
@@ -435,7 +449,7 @@ class Controller(State, FeatureTracker):
             if self.deltas[j] is None:
                 continue
 
-            _ret = self.match(self.desc[j], self.deltas[j])
+            _ret = self.match(self.n_ids[j], self.deltas[j])
             if _ret is None:
                 mismatch -= 1
                 self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
@@ -451,7 +465,6 @@ class Controller(State, FeatureTracker):
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
 
-            self.ids_save[j] = [self.ids[k] for k in idx]
 
             #   BEGIN TEST
             # self.error[j] = _delta_i
@@ -490,7 +503,6 @@ class Controller(State, FeatureTracker):
                         reproject = True)
 
         if mismatch == 0:
-            self.reset_tracking = True
             self.u = np.zeros(6)
             return
 
@@ -542,7 +554,7 @@ class Controller(State, FeatureTracker):
             if self.deltas[j] is None:
                 continue
 
-            _ret = self.match(self.desc[j], self.deltas[j])
+            _ret = self.match(self.n_ids[j], self.deltas[j])
             if _ret is None:
                 mismatch -= 1
                 self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}<-{j})")
@@ -552,7 +564,6 @@ class Controller(State, FeatureTracker):
             complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
             self.error[j] = complement - _delta_i
             self.error[self.label][:,idx] += self.error[j]
-            self.ids_save[j] = [self.ids[k] for k in idx]
 
             # # BEGIN debug
             # if self.label == 0:
@@ -569,25 +580,15 @@ class Controller(State, FeatureTracker):
                 continue
             # self.get_logger().info(str(complement))
             self.custom_draw_matching(self.m_image,
-                        # m_delta_i.T,
-                        # complement.T,
-                        _delta_i,
-                        # complement,
-                        _delta_j,
-                        color1 = (0,200,0),
-                        color2 = (0,124,int(255*j / self.n_agents)),
-                        reproject = True)
-            self.custom_draw_matching(self.m_image,
-                        # m_delta_i.T,
-                        # complement.T,
                         _delta_i,
                         complement,
+                        # _delta_j,
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
 
+
         if mismatch == 0:
-            self.reset_tracking = True
             self._u = np.zeros(6)
             self.u = np.zeros(6)
             return
@@ -678,10 +679,6 @@ class Controller(State, FeatureTracker):
         #   Preprocess matching points image
         self.preproc_image()
         #   Exec state
-        if len(self.p) > 2:
-            self.custom_draw(self.m_image, self.p.T)
-            # self.get_logger().info(f"IBVS tracking {len(self.p)}")
-            # self.get_logger().info(f"IBVS tracking {str(self.p)}")
         self.state()
         #   Publish matching image
         if self.m_image is None:

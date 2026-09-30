@@ -24,16 +24,15 @@ from .my_classes import *
 
 
 
-class Controller(State, FeatureMatcher):
+class Controller(State, FeatureTracker):
 
     def __init__(self):
         super().__init__('Controller')
         
         #   Save data
-        self.proc_paramaters()
+        enable_IBVS = self.proc_paramaters()
+        self.config_reference()
 
-        #   Load references
-        enable_IBVS = self.config_reference()
 
         #   State
         self.u = np.zeros(6)
@@ -44,10 +43,10 @@ class Controller(State, FeatureMatcher):
         self.error = [None]*self.n_agents
         self._err_int = [None]*self.n_agents
         self.norm = -1.
-        self.deltas_self = None
         self.lost_features = False
-        self.desc_self = None
-        self.points = None
+        self.desc = [None]*self.n_agents
+        self.deltas = [None]*self.n_agents
+        self.ids_save = [None]*self.n_agents
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -196,9 +195,15 @@ class Controller(State, FeatureMatcher):
         with open(_name, 'w') as yaml_file:
             yaml.dump(param_dict, yaml_file)
 
-
+        #   Frame transformation robot-camera
+        self.R_cam = np.array(self.camR).reshape((3,3))
+        self.t_cam = np.array(self.camT)
 
         #   inital conditions
+        if len(self.reference_pose) != 4*self.n_agents:
+            return False
+        if len(self.initial_cond) != 4*self.n_agents:
+            return False
         #   TODO: simplify
         self.initial_cond =  np.array(self.initial_cond)
         self.initial_cond = self.initial_cond.reshape((-1,4))
@@ -211,19 +216,18 @@ class Controller(State, FeatureMatcher):
                        [-1., 0., 0.],
                        [0., 0., -1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
+        # self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
-        self.pref[:,:3] /= self.img_depth
+        self.pref[:,:3] = self.pref[:,:3] / self.reference_pose[:,2].reshape((-1,1))
         self.pref[self.pref[:,3] < -np.pi, 3] += np.pi
         self.pref[self.pref[:,3] >  np.pi, 3] -= np.pi
-        print(self.pref)
+        self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.reference_pose = self.reference_pose[self.label]
 
 
-        #   Frame transformation robot-camera
-        self.R_cam = np.array(self.camR).reshape((3,3))
-        self.t_cam = np.array(self.camT)
+
 
         #   Graph Laplacian
         if len(self.L) != self.n_agents**2 :
@@ -236,7 +240,7 @@ class Controller(State, FeatureMatcher):
         _neighbors = self.L[:,self.label].tolist()
         self.out_neighbors = [i for i in range(len(_neighbors)) if _neighbors[i]]
 
-
+        return True
 
     def config_data_storage(self):
 
@@ -251,15 +255,18 @@ class Controller(State, FeatureMatcher):
         self.norm_e_d = os.path.join(self.output, f"norm_error_{self.label}.dat")
         with open(self.norm_e_d, 'w') as file:
             pass  # 'w' mode clears the file's contents
-        # self.error_d = [None]*self.n_agents
-        # for j in self.in_neighbors:
-        #     self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
-        #     with open(self.error_d[j], 'w') as file:
-        #         pass  # 'w' mode clears the file's contents
+        self.error_d = [None]*self.n_agents
+        for j in self.in_neighbors:
+            self.error_d[j] = os.path.join(self.output, f"error_{self.label}_{j}.dat")
+            with open(self.error_d[j], 'w') as file:
+                pass  # 'w' mode clears the file's contents
+        self.error_d[self.label] = os.path.join(self.output, f"error_{self.label}.dat")
+        with open(self.error_d[self.label], 'w') as file:
+            pass  # 'w' mode clears the file's contents
 
-        # self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
-        # with open(self.features_d, 'w') as file:
-        #     pass  # 'w' mode clears the file's contents
+        self.features_d = os.path.join(self.output, f"features_{self.label}.dat")
+        with open(self.features_d, 'w') as file:
+            pass  # 'w' mode clears the file's contents
 
         if self.enable_log:
             self.log_d = [None]*self.n_agents
@@ -267,47 +274,26 @@ class Controller(State, FeatureMatcher):
                 self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
                 with open(self.log_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
-            if self.k_int != 0.:
-                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
-                with open(self.vel_log_d_0, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
-                with open(self.vel_log_d_1, 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-
-        if self.k_int != 0.:
-            self.error_int_d = [None]*self.n_agents
-            for j in self.in_neighbors:
-                self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-                with open(self.error_int_d[j], 'w') as file:
-                    pass  # 'w' mode clears the file's contents
-
-    def config_reference(self):
-
-
-        self.desc = [None]*self.n_agents
-        self.deltas = [None]*self.n_agents
-        self.ids_save = [None]*self.n_agents
-
-        _ret = super().config_reference(f"{self.reference_image_prefix}_{self.label}.png")
-        if not _ret:
-            self.get_logger().error('Wrong reference configuration')
-
-        self.get_logger().info(str(self.desc_ref.shape))
-
-        self.p = np.zeros((2,2), dtype = np.float32)
-        self.deltas_self = np.zeros((2,2), dtype = np.float32)
-        self.ids = np.zeros(2, dtype = np.float32)
-        self.desc_masked = np.zeros((2,2), dtype = np.int8)
-
-
-        return True
+        #     if self.k_int != 0.:
+        #         self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+        #         with open(self.vel_log_d_0, 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
+        #         self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+        #         with open(self.vel_log_d_1, 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
+        #
+        # if self.k_int != 0.:
+        #     self.error_int_d = [None]*self.n_agents
+        #     for j in self.in_neighbors:
+        #         self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
+        #         with open(self.error_int_d[j], 'w') as file:
+        #             pass  # 'w' mode clears the file's contents
 
 
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
+            self.reset_tracking = True
             return
-        # self.reset_flag = True
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -325,12 +311,15 @@ class Controller(State, FeatureMatcher):
             self.cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except CvBridgeError as e:
             self.get_logger().error(f"Error converting image: {e}")
+            return
         except KeyError as e:
             self.get_logger().error(f"Robot name not found in topic: {e}")
+            return
         except Exception as e:
             self.get_logger().error(f"Unexpected error: {e}")
+            return
 
-        self.img_proc()
+        self.img_proc(self.cv_image)
 
 
     def save_data(self):
@@ -359,37 +348,50 @@ class Controller(State, FeatureMatcher):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
-        # if not self.deltas is None:
-        #
-        #     with open(self.features_d, 'ab') as f:
-        #         for i, m in enumerate(self.ids):
-        #
-        #             data = (t, m)
-        #             data += tuple(self.p[i, :].reshape(-1))
-        #             binary = struct.pack('didd', *data)
-        #             f.write(binary)
-        #
-        #     for j in self.in_neighbors:
-        #         if self.ids_save[j] is None:
-        #             continue
-        #         with open(self.error_d[j], 'ab') as f:
-        #             for i, m in enumerate( self.ids_save[j]):
-        #
-        #                 data = (t, m)
-        #                 data += tuple(self.error[j][:,i].T.reshape(-1))
-        #                 binary = struct.pack('didd', *data)
-        #                 f.write(binary)
+        if self.deltas is None:
+            return
+
+        with open(self.features_d, 'ab') as f:
+            for i, m in enumerate(self.ids):
+
+                data = (t, m)
+                data += tuple(self.p[i, :].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
+        for j in self.in_neighbors:
+            if self.error[j] is None:
+                continue
+            if self.ids_save[j] is None:
+                continue
+            with open(self.error_d[j], 'ab') as f:
+                for i, m in enumerate( self.ids_save[j]):
+
+                    data = (t, m)
+                    data += tuple(self.error[j][:,i].T.reshape(-1))
+                    binary = struct.pack('didd', *data)
+                    f.write(binary)
+        if not self.error[self.label] is None:
+            with open(self.error_d[self.label], 'ab') as f:
+                for i, m in enumerate( self.ids):
+
+                    data = (t, m)
+                    data += tuple(self.error[self.label][:,i].T.reshape(-1))
+                    binary = struct.pack('didd', *data)
+                    f.write(binary)
         #
 
 
     def delta_receiver(self, msg):
 
         #   TODO: include depth
+        if self.desc_self is None:
+            return
 
         j = msg.j
         _depth = msg.depth
 
-        _desc = np.array(msg.desc.data, dtype= self.desc_ref.dtype )
+        _desc = np.array(msg.desc.data, dtype= self.desc_self.dtype )
         _desc = _desc.reshape((msg.desc.rows, msg.desc.cols))
 
         _deltas = np.array(msg.deltas.data, dtype= np.float32 )
@@ -426,25 +428,35 @@ class Controller(State, FeatureMatcher):
         if  self.cv_image is None:
             return None
         self.m_image = self.cv_image.copy()
+        if len(self.p) > 2:
+            self.custom_draw(self.m_image, self.p.T)
 
     def control(self):
         _n = 0.
+        self._u = np.zeros(6)
+        # self._u = np.zeros(4)
+        mismatch = len(self.in_neighbors)
         for j in self.in_neighbors:
             if self.deltas[j] is None:
                 continue
 
             _ret = self.match(self.desc[j], self.deltas[j])
             if _ret is None:
+                mismatch -= 1
+                self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
                 continue
 
-            _delta_i, _delta_j = _ret
+            _delta_i, _delta_j, idx = _ret
             complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
             self.error[j] = complement - _delta_i
             # self.error[j] = _delta_j - _delta_i - .1*self.pref[j,:2].reshape((2,1))
+            # self.L = interaction_matrix_z(_delta_i, self.img_depth)
             self.L = interaction_matrix_xyz(_delta_i, self.img_depth)
             # self.L = interaction_matrix_xyz(complement, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+
+            self.ids_save[j] = [self.ids[k] for k in idx]
 
             #   BEGIN TEST
             # self.error[j] = _delta_i
@@ -467,6 +479,9 @@ class Controller(State, FeatureMatcher):
             self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)
             _n += 1.
 
+            # if self.label == 0:
+            #     self.get_logger().info(str(self.error[j]))
+
             # TODO image draw
             if self.m_image is None:
                 continue
@@ -479,17 +494,21 @@ class Controller(State, FeatureMatcher):
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
 
+        if mismatch == 0:
+            self.reset_tracking = True
+            self.u = np.zeros(6)
+            return
 
         # # BEGIN DEBUG
         # if self.label != 0:
         #     self.u = np.zeros(6)
         #     return
-        # # END DEBUG
 
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
         #     self._u /= _n
         # self._u = np.zeros(6)
+        # # END DEBUG
         #   6DOF
         _w = self.R_cam @ self._u[3:]
         _v = (self.R_cam @ self._u[:3]).reshape(-1)
@@ -497,8 +516,123 @@ class Controller(State, FeatureMatcher):
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
+        self.get_logger().info(str(self.u))
         #   4DOF
         # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return
+
+    def control2(self):
+        _n = 0.
+        self.error[self.label] = np.zeros(self.points.shape)
+        mismatch = len(self.in_neighbors)
+        # self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        # L_inv = Inv_Moore_Penrose(self.L)
+        # if L_inv is None:
+        #     self.get_logger().error("Invalid Ls matrix")
+        #     self._u = np.zeros(6)
+        #     self.u = np.zeros(6)
+        #     return
+
+        if self.enable_log:
+            _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+        for j in self.in_neighbors:
+            if self.deltas[j] is None:
+                continue
+
+            _ret = self.match(self.desc[j], self.deltas[j])
+            if _ret is None:
+                mismatch -= 1
+                self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}<-{j})")
+                continue
+
+            _delta_i, _delta_j, idx = _ret
+            complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
+            self.error[j] = complement - _delta_i
+            self.error[self.label][:,idx] += self.error[j]
+            self.ids_save[j] = [self.ids[k] for k in idx]
+
+            # # BEGIN debug
+            # if self.label == 0:
+            #     # self.get_logger().info(str(self.error[j]))
+            #     # self.get_logger().info(str(idx))
+            #     self.get_logger().info(str(self.error[self.label]))
+            #
+            # # END debug
+
+            _n += 1.
+
+            # TODO image draw
+            if self.m_image is None:
+                continue
+            # self.get_logger().info(str(complement))
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        # complement,
+                        _delta_j,
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        _delta_i+self.pref[j,:2].reshape((2,1)),
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
+
+        if mismatch == 0:
+            self.reset_tracking = True
+            self._u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+
+        mask = np.logical_or(self.error[self.label][0,:] !=0.,
+                             self.error[self.label][1,:] !=0.)
+
+        # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        L_inv = Inv_Moore_Penrose(self.L)
+        if L_inv is None:
+            self.get_logger().error("Invalid Ls matrix")
+            self._u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)
+        # BEGIN debug
+        # if self.label == 0:
+        #     self._u = np.zeros(6)
+        #     self.get_logger().info(str(self.error[self.label][:,mask]))
+
+            # END debug
+
+        # # # BEGIN DEBUG
+        # if self.label != 0:
+        #     self.u = np.zeros(6)
+        #     return
+        #
+        # if _n != 0:
+        #     self.get_logger().info(f"Neig:{_n}")
+        #     self._u /= _n
+        # self._u = np.zeros(6)
+        # # # END DEBUG
+        # 6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
         # _v = (self.R_cam @ self._u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
@@ -515,25 +649,27 @@ class Controller(State, FeatureMatcher):
                 self.save_data()
         else:
             #   IBFC
-            self._u = np.zeros(6)
+            # self._u = np.zeros(6)
             # if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
             #     _image = self.control_int(_image)
             #
             # else:
             #     _image = self.control_p(_image)
-            self.control()
+            # self.control()
+            self.control2()
 
             _norm = 0.
             for j in self.in_neighbors:
                 if self.error[j] is None:
                     continue
                 _v = self.error[j].reshape(-1)
-                _norm += np.dot(_v,_v)
+                _norm += np.dot(_v,_v) / float(_v.shape[0])
             self.norm = np.sqrt(_norm)
             self.data2save = True
             self.save_data()
 
-        super().s_control(self.u)
+        # self.u = np.zeros(6)
+        super().s_control()
 
 
     def control_loop(self):
@@ -543,8 +679,6 @@ class Controller(State, FeatureMatcher):
         #   Preprocess matching points image
         self.preproc_image()
         #   Exec state
-        if not self.p is None:
-            self.custom_draw(self.m_image, self.p.T)
         self.state()
         #   Publish matching image
         if self.m_image is None:

@@ -37,8 +37,9 @@ setup(
             "hbvs_sim = ros2_bebop_ibvs.hbvs_sim:main",
             "hbvs_real = ros2_bebop_ibvs.hbvs_real:main",
             "sim_control = ros2_bebop_ibvs.sim_control:main",
-            "mav_ibvs_direct_tracking_sim = ros2_bebop_ibvs.mav_ibvs_direct_tracking_sim:main",
-            "mav_ibvs_direct_matching_sim = ros2_bebop_ibvs.mav_ibvs_direct_matching_sim:main",
+            "mas_ibvs_direct_tracking_sim = ros2_bebop_ibvs.mas_ibvs_direct_tracking_sim:main",
+            "mas_ibvs_direct_matching_sim = ros2_bebop_ibvs.mas_ibvs_direct_matching_sim:main",
+            "mas_ibvs_direct_arucos_sim = ros2_bebop_ibvs.mas_ibvs_direct_arucos_sim:main",
         ],
     },
 )

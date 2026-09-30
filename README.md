@@ -140,9 +140,9 @@ export GZ_VERSION=jetty
 # Run simulations
 
 ```bash
-# screen 1 (choose single or mav to run)
+# screen 1 (choose single or mas to run)
 ros2 launch ros2_bebop_ibvs single_sim.launch.py
-ros2 launch ros2_bebop_ibvs mav_sim.launch.py
+ros2 launch ros2_bebop_ibvs mas_sim.launch.py
 # screen 2
 ros2 run rqt_image_view rqt_image_view
 # screen 3
@@ -271,8 +271,8 @@ Arguments:
 
 To run:
 ```
-$ python3 scripts/plot_mav_desc.py -h
-usage: python3 plot_mav_desc.py [-h] [--config CONFIG] directory
+$ python3 scripts/plot_mas_desc.py -h
+usage: python3 plot_mas_desc.py [-h] [--config CONFIG] directory
 
 Plotting multiple agent experiment data
 
@@ -281,6 +281,6 @@ positional arguments:
 
 options:
   -h, --help       show this help message and exit
-  --config CONFIG  File containign the configurations (defaultconfig/mav_sim.yaml)
+  --config CONFIG  File containign the configurations (defaultconfig/mas_sim.yaml)
 
 ```
