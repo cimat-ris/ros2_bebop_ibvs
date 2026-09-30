@@ -77,7 +77,12 @@ class Ploter():
         else:
             self.camera_angle = 0.
 
+        if 'point_type' in _dict:
+            self.point_type = _dict['point_type']
+        else:
+            self.point_type = "features"
 
+        self.point_count = 2 if self.point_type == "features" else 8
 
         pd = pd.reshape((-1,4))
         n = pd.shape[0]
@@ -189,13 +194,13 @@ class Ploter():
                     n_e = {'t': n_e[0,:], 'v': n_e[1:,:].T}
                 self.n_e = n_e
 
-        name = os.path.join(self.directory, f"features_{label}.dat")
+        name = os.path.join(self.directory, f"{self.point_type}_{label}.dat")
         self.features = None
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
                 with open(name, 'rb') as fileH:
-                    size = 3*b_double + b_int
+                    size = (self.point_count+1)*b_double + b_int
                     rows = length / size
                     rows = int(np.floor(rows))
 
@@ -212,7 +217,7 @@ class Ploter():
                         idx = idx[0]
                         _feat = np.fromfile(fileH,
                                             dtype = np.float64,
-                                            count = 2)
+                                            count = self.point_count)
                         # print(time, idx, _feat)
 
                         # print(time)
@@ -229,10 +234,11 @@ class Ploter():
                     t0 = [ features[key]["t"][0] for  key in features]
                     t0 = min(t0)
                     for i in features:
-                        features[i]["v"] = features[i]["v"].reshape((-1,2))
+                        features[i]["v"] = features[i]["v"].reshape((-1,self.point_count))
                         features[i]["v"] = features[i]["v"].T
                         features[i]["t"] = [t - t0 for t in features[i]["t"]]
                 self.features = features
+                # print(features)
 
 
 
@@ -246,7 +252,7 @@ class Ploter():
                     length = os.path.getsize(name)
                     if length > 0:
                         with open(name, 'rb') as fileH:
-                            size = 3*b_double + b_int
+                            size = (self.point_count+1)*b_double + b_int
                             rows = (length) / size
                             rows = int(np.floor(rows))
 
@@ -263,7 +269,7 @@ class Ploter():
                                 idx = idx[0]
                                 _error = np.fromfile(fileH,
                                                     dtype = np.float64,
-                                                    count = 2)
+                                                    count = self.point_count)
                                 all_idx.add(idx)
 
                                 if (any(_error > 10)):
@@ -278,7 +284,7 @@ class Ploter():
                             t0 = [ error[key]["t"][0] for  key in error]
                             t0 = min(t0)
                             for i in error:
-                                error[i]["v"] = error[i]["v"].reshape((-1,2))
+                                error[i]["v"] = error[i]["v"].reshape((-1,self.point_count))
                                 # error[i]["v"] = error[i]["v"].T
                                 error[i]["t"] = [t - t0 for t in error[i]["t"]]
                         self.error[label][k] = error
@@ -289,7 +295,7 @@ class Ploter():
                 length = os.path.getsize(name)
                 if length > 0:
                     with open(name, 'rb') as fileH:
-                        size = 3*b_double + b_int
+                        size = (self.point_count+1)*b_double + b_int
                         rows = (length) / size
                         rows = int(np.floor(rows))
 
@@ -306,7 +312,7 @@ class Ploter():
                             idx = idx[0]
                             _error = np.fromfile(fileH,
                                                 dtype = np.float64,
-                                                count = 2)
+                                                count = self.point_count)
                             all_idx.add(idx)
 
                             if (any(_error > 10)):
@@ -321,7 +327,7 @@ class Ploter():
                         t0 = [ error[key]["t"][0] for  key in error]
                         t0 = min(t0)
                         for i in error:
-                            error[i]["v"] = error[i]["v"].reshape((-1,2))
+                            error[i]["v"] = error[i]["v"].reshape((-1,self.point_count))
                             # error[i]["v"] = error[i]["v"].T
                             error[i]["t"] = [t - t0 for t in error[i]["t"]]
                     self.error[label][label] = error
@@ -346,16 +352,16 @@ class Ploter():
             t.sort()    #   Just in case
 
             # Sum error
-            new_error = np.zeros((len(t),2*len(all_idx)))
+            new_error = np.zeros((len(t),self.point_count*len(all_idx)))
             for i in range(len(t)):
-                _v = np.zeros(2*len(all_idx)) # _v the error at a time step
+                _v = np.zeros(self.point_count*len(all_idx)) # _v the error at a time step
                 for _dict in self.error[label]: #   For each agent
                     if not _dict is None:
                         for idx in _dict:   # for each aruco
                             if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
                                 t_id = _dict[idx]['t'].index(t[i])
                                 v_id = all_idx.index(idx)
-                                _v[v_id*2 : v_id*2+2] += _dict[idx]['v'][t_id]
+                                _v[v_id*self.point_count : (v_id+1)*self.point_count] += _dict[idx]['v'][t_id]
                 new_error[i,:] = _v # Tal vez copy
             t0 = t[0]
             self.error[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
@@ -966,9 +972,9 @@ def plotFeat(directory, features, name): #, reference):
         # if i in reference[0]:
         #     k = reference[0].index(i)
             # s_ref = reference[1][k].reshape(8)
-        points = np.array(v["v"]).reshape((2,-1))
+        # points = np.array(v["v"]).reshape((2,-1))
         symbols = plot_descriptors_simple(ax,
-                            points,
+                            np.array(v["v"]),
                             # s_ref,
                         camera_iMsize,
                         enableLims = True)

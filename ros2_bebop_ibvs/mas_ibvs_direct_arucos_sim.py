@@ -44,6 +44,7 @@ class Controller(State, ArUcoTracker):
         self.norm = -1.
         self.deltas = [None]*self.n_agents
         self.n_ids = [None]*self.n_agents
+        self.ids_save = [None]*self.n_agents
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -314,6 +315,9 @@ class Controller(State, ArUcoTracker):
             return
 
         self.img_proc(self.cv_image)
+        # if self.label == 1:
+        #     self.get_logger().info(f"{self.corners})")
+        #     self.get_logger().info(f"{self.p})")
 
 
     def save_data(self):
@@ -359,10 +363,10 @@ class Controller(State, ArUcoTracker):
         for j in self.in_neighbors:
             if self.error[j] is None:
                 continue
-            if self.n_ids[j] is None:
+            if self.ids_save[j] is None:
                 continue
             with open(self.error_d[j], 'ab') as f:
-                for i, m in enumerate( self.n_ids[j]):
+                for i, m in enumerate( self.ids_save[j]):
 
                     data = (t, m)
                     data += tuple(self.error[j][:,i*4:i*4+4].T.reshape(-1))
@@ -382,8 +386,8 @@ class Controller(State, ArUcoTracker):
 
     def delta_receiver(self, msg):
 
-
         j = msg.j
+        # self.get_logger().info(f"recv {self.label} <- {j}")
         n = msg.size
         depth = msg.depth
 
@@ -393,11 +397,10 @@ class Controller(State, ArUcoTracker):
         for i in range(n):
             ids.append(msg.arucos[i].id)
             p = []
-            for j in range(4):
-                _p = [msg.arucos[i].points[j].x,
-                      msg.arucos[i].points[j].y]
-                p.append(_p)
-            deltas.append(p)
+            for k in range(4):
+                _p = [msg.arucos[i].points[k].x,
+                      msg.arucos[i].points[k].y]
+                deltas.append(_p)
 
         self.n_ids[j] = ids
         self.deltas[j] = np.array(deltas).T
@@ -435,10 +438,7 @@ class Controller(State, ArUcoTracker):
             return
         if self.ids is None:
             return
-        # cv2.aruco.drawDetectedMarkers(self.m_image,
-        #                                   self.corners,
-        #                                   self.ids,
-        #                                 borderColor = (0,100,0.) )
+        self.aruco_draw_custom(self.m_image)
 
     def control(self):
         _n = 0.
@@ -455,7 +455,7 @@ class Controller(State, ArUcoTracker):
                 self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
                 continue
 
-            _delta_i, _delta_j, idx = _ret
+            _delta_i, _delta_j, _idx, _ = _ret
             complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
             self.error[j] = complement - _delta_i
             # self.error[j] = _delta_j - _delta_i - .1*self.pref[j,:2].reshape((2,1))
@@ -465,8 +465,10 @@ class Controller(State, ArUcoTracker):
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
 
-
+            self.ids_save[j] = _idx
             #   BEGIN TEST
+            # if self.label == 0:
+            #     self.get_logger().info(str(self.error[j]))
             # self.error[j] = _delta_i
             # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
             # self.error[j] = _delta_i
@@ -488,6 +490,8 @@ class Controller(State, ArUcoTracker):
             _n += 1.
 
             # if self.label == 0:
+            #     self.get_logger().info(f"{self.corners})")
+            #     self.get_logger().info(f"{self.p})")
             #     self.get_logger().info(str(self.error[j]))
 
             # TODO image draw
@@ -504,6 +508,7 @@ class Controller(State, ArUcoTracker):
 
         if mismatch == 0:
             self.u = np.zeros(6)
+            self.get_logger().warning("Complete mismatch")
             return
 
         # # BEGIN DEBUG
@@ -560,14 +565,15 @@ class Controller(State, ArUcoTracker):
                 self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}<-{j})")
                 continue
 
-            _delta_i, _delta_j, idx = _ret
+            _delta_i, _delta_j, _idx, idx = _ret
             complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
             self.error[j] = complement - _delta_i
             self.error[self.label][:,idx] += self.error[j]
+            self.ids_save[j] = _idx
 
             # # BEGIN debug
             # if self.label == 0:
-            #     # self.get_logger().info(str(self.error[j]))
+            #     self.get_logger().info(str(self.error[j]))
             #     # self.get_logger().info(str(idx))
             #     self.get_logger().info(str(self.error[self.label]))
             #
@@ -581,8 +587,8 @@ class Controller(State, ArUcoTracker):
             # self.get_logger().info(str(complement))
             self.custom_draw_matching(self.m_image,
                         _delta_i,
-                        complement,
-                        # _delta_j,
+                        # complement,
+                        _delta_j,
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
@@ -591,6 +597,7 @@ class Controller(State, ArUcoTracker):
         if mismatch == 0:
             self._u = np.zeros(6)
             self.u = np.zeros(6)
+            self.get_logger().warning("Complete mismatch")
             return
 
         mask = np.logical_or(self.error[self.label][0,:] !=0.,

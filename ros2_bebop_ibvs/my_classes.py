@@ -266,7 +266,7 @@ class ArUcoTracker(ImageProc):
         _delta_i = self.points[:,query]
         _delta_j = delta_m[:,match]
 
-        return _delta_i, _delta_j, query
+        return _delta_i, _delta_j, _query, query
 
     # def match_ref(self, ids_m, delta_m):
     #
@@ -294,6 +294,12 @@ class ArUcoTracker(ImageProc):
 
         return True
 
+    def aruco_draw_custom(self, image):
+        cv2.aruco.drawDetectedMarkers(image,
+                                      self.corners,
+                                      self.m_ids,
+                                        borderColor = (0,100,0.) )
+
     def img_proc(self, image):
 
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -313,6 +319,7 @@ class ArUcoTracker(ImageProc):
         self.p = np.concatenate(self.corners).reshape((-1,2))
 
         # self.ids = ids.ravel().tolist()
+        self.m_ids = ids
         self.ids = [i[0] for i in ids]
 
 
