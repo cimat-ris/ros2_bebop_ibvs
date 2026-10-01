@@ -25,8 +25,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='jr',
-    maintainer_email='juliordzcer@outlook.com',
+    maintainer='Axolomacer',
+    maintainer_email='echavezaparicio@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
@@ -40,6 +40,7 @@ setup(
             "mas_ibvs_direct_tracking_sim = ros2_bebop_ibvs.mas_ibvs_direct_tracking_sim:main",
             "mas_ibvs_direct_matching_sim = ros2_bebop_ibvs.mas_ibvs_direct_matching_sim:main",
             "mas_ibvs_direct_arucos_sim = ros2_bebop_ibvs.mas_ibvs_direct_arucos_sim:main",
+            "mas_ibvs_direct_virtualP_sim = ros2_bebop_ibvs.mas_ibvs_direct_virtualP_sim:main",
         ],
     },
 )

@@ -126,6 +126,378 @@ def Inv_Moore_Penrose(L):
     return np.linalg.inv(A) @ L.T
 
 
+
+
+#   ---------------------------------------------------
+#   ---------------------------------------------------
+#   STATE MACHINE CLASS BASE
+#   ---------------------------------------------------
+#   ---------------------------------------------------
+
+
+class State(Node):
+
+    def __init__(self,name):
+        super().__init__(name)
+        self.state = self.s_idle
+        self.new_state = IDLE
+        self.current_pose = Pose()
+        self.m_vel = Twist()
+        self.takeoff_complete = False
+
+        # Define in subclass
+        self.initial_cond = None
+        self.reference_pose = None
+
+        super().declare_parameter('takeoff_threshold', 0.04)
+        super().declare_parameter('landing_threshold', 0.08)
+        super().declare_parameter('takeoff_height', 1.0)
+        super().declare_parameter('gain_takeoff', 1.)
+
+        self.takeoff_threshold = super().get_parameter('takeoff_threshold').value
+        self.landing_threshold = super().get_parameter('landing_threshold').value
+        self.takeoff_height = super().get_parameter('takeoff_height').value
+        self.gain_takeoff = super().get_parameter('gain_takeoff').value
+
+        self.u = np.zeros(6)
+
+    #   Initial configuration before loop
+    def create_publishers(self, qos):
+        self.cmd_pub = self.create_publisher(Twist,
+                                             f"/{self.robot_name}_{self.label}/cmd_vel",
+                                             qos)
+
+        print(f"/{self.robot_name}_{self.label}/cmd_vel" )
+        self.cmd_enable = self.create_publisher(Bool,
+                                                f"/{self.robot_name}_{self.label}/enable",
+                                                qos)
+
+        #   Subscriptions
+        self.pos_sub = self.create_subscription(Pose,
+                                                f"/{self.robot_name}_{self.label}/pose",
+                                                self.pos_changed,
+                                                qos)
+    def pos_changed(self, msg):
+        self.current_pose = msg
+
+    def get_pose(self):
+        t = [self.current_pose.position.x,
+                        self.current_pose.position.y,
+                        self.current_pose.position.z]
+        t = np.array(t)
+        _orientation = [self.current_pose.orientation.x,
+                        self.current_pose.orientation.y,
+                        self.current_pose.orientation.z,
+                        self.current_pose.orientation.w]
+        R = quaternion_matrix(_orientation)
+        R = R[:3,:]
+        R = R[:,:3]
+
+        return t, R
+
+    #   STATES:
+    def s_idle(self):
+
+        if self.new_state == IDLE:
+            return
+        if self.new_state == TAKEOFF:
+            self.get_logger().info("State change: TAKEOFF")
+            self.state = self.s_takeoff
+            self.takeoff_complete = False
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+
+    def s_takeoff(self):
+
+        current_z = self.current_pose.position.z
+        delta = current_z- self.takeoff_height
+
+        if abs(delta) < self.takeoff_threshold and not self.takeoff_complete:
+            #   Proportional control iniside takeoff_threshold
+            self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
+            self.takeoff_complete = True
+
+        msg = Twist()
+        msg.linear.z = -self.gain_takeoff*float(delta)
+        self.cmd_pub.publish(msg)
+
+        self.get_logger().debug(f"Control input: {msg.linear.z}")
+
+        if self.new_state == CONTROL and self.takeoff_complete:
+            self.get_logger().info("State change: CONTROL")
+            self.state = self.s_control
+            return
+        if self.new_state == CONTROL and  not self.takeoff_complete:
+            self.get_logger().info("Waiting for TAKEOFF to finish, can not change to CONTROL")
+            self.new_state = TAKEOFF
+            return
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+            return
+
+    def s_init_cond(self):
+
+        # _my_position = [self.current_pose.position.x,
+        #                 self.current_pose.position.y,
+        #                 self.current_pose.position.z]
+        # my_position = np.array(_my_position)
+        # _orientation = [self.current_pose.orientation.x,
+        #                 self.current_pose.orientation.y,
+        #                 self.current_pose.orientation.z,
+        #                 self.current_pose.orientation.w]
+
+        my_position, _R = self.get_pose()
+
+        _delta = my_position- self.initial_cond[:3]
+        if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+            #   Proportional control iniside takeoff_threshold
+            self.get_logger().info(f"Initial condition reached")
+            self.init_complete = True
+
+
+        _u = -self.gain_takeoff * _delta
+        # _R = quaternion_matrix(_orientation)
+        # _R = _R[:3,:]
+        # _R = _R[:,:3]
+        _u = _R.T @ _u
+
+        _, _, _yaw = euler_from_matrix(_R)
+
+        _yaw = _yaw - self.initial_cond[3]
+        _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+        _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+        msg = Twist()
+        msg.linear.x = float(_u[0])
+        msg.linear.y = float(_u[1])
+        msg.linear.z = float(_u[2])
+        msg.angular.z = float(-self.gain_takeoff* _yaw)
+        self.cmd_pub.publish(msg)
+
+        self.get_logger().debug(f"Control input: {_u}")
+
+        #   Change state
+        if self.new_state == CONTROL and self.init_complete:
+            self.get_logger().info("State change: CONTROL")
+            self.state = self.s_control
+            return
+        if self.new_state == CONTROL and  not self.init_complete:
+            self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to CONTROL")
+            self.new_state = INITCOND
+            return
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+
+    def s_reference(self):
+
+        # _my_position = [self.current_pose.position.x,
+        #                 self.current_pose.position.y,
+        #                 self.current_pose.position.z]
+        # my_position = np.array(_my_position)
+        # _orientation = [self.current_pose.orientation.x,
+        #                 self.current_pose.orientation.y,
+        #                 self.current_pose.orientation.z,
+        #                 self.current_pose.orientation.w]
+        my_position, _R = self.get_pose()
+
+        _delta = my_position- self.reference_pose[:3]
+        if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
+            #   Proportional control iniside takeoff_threshold
+            self.get_logger().info(f"Reference pose reached")
+            self.init_complete = True
+
+        msg = Twist()
+        _u = -self.gain_takeoff * _delta
+        # _R = quaternion_matrix(_orientation)
+        # _R = _R[:3,:]
+        # _R = _R[:,:3]
+        _u = _R.T @ _u
+
+        _, _, _yaw = euler_from_matrix(_R)
+
+        _yaw = _yaw - self.reference_pose[3]
+        _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
+        _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
+
+        msg.linear.x = float(_u[0])
+        msg.linear.y = float(_u[1])
+        msg.linear.z = float(_u[2])
+        msg.angular.z = float(-self.gain_takeoff* _yaw)
+        self.cmd_pub.publish(msg)
+
+        self.get_logger().debug(f"Control input: {_u}")
+
+        #   Change state
+        if self.new_state == CONTROL and self.init_complete:
+            self.get_logger().info("State change: CONTROL")
+            self.state = self.s_control
+            return
+        if self.new_state == CONTROL and  not self.init_complete:
+            self.get_logger().info("Waiting for REFERENCE CONDITION to finish, can not change to CONTROL")
+            self.new_state = REFERENCE
+            return
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+
+    def s_land(self):
+        current_z = self.current_pose.position.z
+        msg = Twist()
+
+        # Descender controladamente
+        msg.linear.z = self.gain_takeoff* float(- current_z)
+        self.cmd_pub.publish(msg)
+
+
+        if current_z <= self.landing_threshold:
+            #   Landing finished
+            self.get_logger().info("¡Landing complete!")
+            self.state = self.s_idle
+            self.cmd_enable.publish(Bool(data=False))
+            self.cmd_pub.publish(Twist())
+            return
+        #   Change state
+        if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
+            self.get_logger().info("State change: IDLE")
+            self.state = self.s_idle
+            return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+
+    def s_control(self):
+
+        self.m_vel.linear.x = float(self.u[0])
+        self.m_vel.linear.y = float(self.u[1])
+        self.m_vel.linear.z = float(self.u[2])
+        self.m_vel.angular.z = float(self.u[5])
+
+        try:
+            self.cmd_pub.publish(self.m_vel)
+        except Exception as e:
+            self.get_logger().error(f"Error with IBFC control: {str(e)}")
+            self.enable = False
+            self.cmd_enable.publish(Bool(data=self.enable))
+
+
+        #   Change state
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == HOLD:
+            self.get_logger().info("State change: HOLD")
+            self.state = self.s_hold
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+
+    def s_hold(self):
+
+        self.cmd_pub.publish(Twist())
+
+        if self.new_state == CONTROL:
+            self.get_logger().info("State change: CONTROL")
+            self.new_state = CONTROL
+            return
+        if self.new_state == LAND:
+            self.get_logger().info("State change: LAND")
+            self.state = self.s_land
+            return
+        if self.new_state == STOP:
+            self.get_logger().info("State change: STOP")
+            self.state = self.s_stop
+            return
+        if self.new_state == INITCOND:
+            self.get_logger().info("State change: INITCOND")
+            self.state = self.s_init_cond
+            self.init_complete = False
+            return
+        if self.new_state == REFERENCE:
+            self.get_logger().info("State change: REFERENCE")
+            self.state = self.s_reference
+            self.init_complete = False
+            return
+
+    def s_stop(self):
+        self.cmd_pub.publish(Twist())
+        self.cmd_pub.publish(Twist())
+        self.cmd_pub.publish(Twist())
+        self.cmd_enable.publish(Bool(data=False))
+        self.get_logger().info("State change: IDLE")
+        self.state = self.s_idle
+
+
+
 #   ---------------------------------------------------
 #   ---------------------------------------------------
 #   IMAGE PROC CLASS : Feature matcher
@@ -133,16 +505,24 @@ def Inv_Moore_Penrose(L):
 #   ---------------------------------------------------
 
 
-class ImageProc(Node):
+class ImageProc(State):
 
     def __init__(self, name):
         super().__init__(name)
         super().declare_parameter('K', [1.]*9)
+        super().declare_parameter('CamR', [1.]*9)
+        super().declare_parameter('CamT', [1.]*9)
+
         self.K = super().get_parameter('K').value
+        self.camR = super().get_parameter('CamR').value
+        self.camT = super().get_parameter('CamT').value
 
         self.f = [self.K[0], self.K[4]]
         self.pPrinc = [self.K[2],self.K[5]]
         self.K = np.array(self.K).reshape((3,3))
+
+        self.R_cam = np.array(self.camR).reshape((3,3))
+        self.t_cam = np.array(self.camT)
 
         self.p = None
 
@@ -189,7 +569,8 @@ class ImageProc(Node):
 
     def custom_draw(self, m_image, points,
                          color=(0, 0, 255),
-                         point_radius=3, line_thickness = 1,
+                         point_radius=3,
+                         line_thickness = 1,
                          reproject = False):
 
         if reproject:
@@ -204,6 +585,42 @@ class ImageProc(Node):
             # Draw points
             cv2.circle(m_image, _points[i,:].astype(int), point_radius, color, -1)
 
+
+
+class VirtualTracker(ImageProc):
+
+    def __init__(self, name):
+        super().__init__(name)
+        super().declare_parameter('points3D', [1.]*3)
+        self.points3D = super().get_parameter('points3D').value
+
+        self.points3D = np.array(self.points3D).reshape((-1,3)).T
+
+        self.p = None
+        self.points = None
+
+
+    def project(self, pose):
+
+        #   To robot frame
+        t, R = self.get_pose()
+        _p  = self.points3D - t.reshape((3,-1))
+        _p = R.T @ _p
+
+        # To camera frame
+        _p  = _p - self.t_cam.reshape((3,1))
+        _p  = self.R_cam.T @ _p
+
+        if (_p <= 0.).any():
+            self.p = None
+            self.points = None
+
+        #   Projection
+        _p = self.K @ _p
+        _p = _p[:2,:] / _p[2,:]
+
+        self.p = _p.T
+        self.points = self.normalize(_p)
 
 class ArUcoTracker(ImageProc):
 
@@ -689,355 +1106,6 @@ class FeatureMatcher(ImageProc):
     #   Takes a list of points and overlaps the matches in the same picture
 
 
-#   ---------------------------------------------------
-#   ---------------------------------------------------
-#   STATE MACHINE CLASS BASE
-#   ---------------------------------------------------
-#   ---------------------------------------------------
-
-
-class State(Node):
-
-    def __init__(self,name):
-        super().__init__(name)
-        self.state = self.s_idle
-        self.new_state = IDLE
-        self.current_pose = Pose()
-        self.m_vel = Twist()
-        self.takeoff_complete = False
-
-        # Define in subclass
-        self.initial_cond = None
-        self.reference_pose = None
-
-        super().declare_parameter('takeoff_threshold', 0.04)
-        super().declare_parameter('landing_threshold', 0.08)
-        super().declare_parameter('takeoff_height', 1.0)
-        super().declare_parameter('gain_takeoff', 1.)
-
-
-        self.takeoff_threshold = super().get_parameter('takeoff_threshold').value
-        self.landing_threshold = super().get_parameter('landing_threshold').value
-        self.takeoff_height = super().get_parameter('takeoff_height').value
-        self.gain_takeoff = super().get_parameter('gain_takeoff').value
-
-        self.u = np.zeros(6)
-
-    #   Initial configuration before loop
-    def create_publishers(self, qos):
-        self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}_{self.label}/cmd_vel",
-                                             qos)
-
-        print(f"/{self.robot_name}_{self.label}/cmd_vel" )
-        self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}_{self.label}/enable",
-                                                qos)
-
-        #   Subscriptions
-        self.pos_sub = self.create_subscription(Pose,
-                                                f"/{self.robot_name}_{self.label}/pose",
-                                                self.pos_changed,
-                                                qos)
-    def pos_changed(self, msg):
-        self.current_pose = msg
-
-    #   STATES:
-    def s_idle(self):
-
-        if self.new_state == IDLE:
-            return
-        if self.new_state == TAKEOFF:
-            self.get_logger().info("State change: TAKEOFF")
-            self.state = self.s_takeoff
-            self.takeoff_complete = False
-            return
-        if self.new_state == INITCOND:
-            self.get_logger().info("State change: INITCOND")
-            self.state = self.s_init_cond
-            self.init_complete = False
-            return
-        if self.new_state == REFERENCE:
-            self.get_logger().info("State change: REFERENCE")
-            self.state = self.s_reference
-            self.init_complete = False
-
-    def s_takeoff(self):
-
-        current_z = self.current_pose.position.z
-        delta = current_z- self.takeoff_height
-
-        if abs(delta) < self.takeoff_threshold and not self.takeoff_complete:
-            #   Proportional control iniside takeoff_threshold
-            self.get_logger().info(f"Takeoff completed: {current_z:.2f}m")
-            self.takeoff_complete = True
-
-        msg = Twist()
-        msg.linear.z = -self.gain_takeoff*float(delta)
-        self.cmd_pub.publish(msg)
-
-        self.get_logger().debug(f"Control input: {msg.linear.z}")
-
-        if self.new_state == CONTROL and self.takeoff_complete:
-            self.get_logger().info("State change: CONTROL")
-            self.state = self.s_control
-            return
-        if self.new_state == CONTROL and  not self.takeoff_complete:
-            self.get_logger().info("Waiting for TAKEOFF to finish, can not change to CONTROL")
-            self.new_state = TAKEOFF
-            return
-        if self.new_state == LAND:
-            self.get_logger().info("State change: LAND")
-            self.state = self.s_land
-            return
-        if self.new_state == HOLD:
-            self.get_logger().info("State change: HOLD")
-            self.state = self.s_hold
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-            return
-        if self.new_state == INITCOND:
-            self.get_logger().info("State change: INITCOND")
-            self.state = self.s_init_cond
-            self.init_complete = False
-            return
-        if self.new_state == REFERENCE:
-            self.get_logger().info("State change: REFERENCE")
-            self.state = self.s_reference
-            self.init_complete = False
-            return
-
-    def s_init_cond(self):
-
-        _my_position = [self.current_pose.position.x,
-                        self.current_pose.position.y,
-                        self.current_pose.position.z]
-        my_position = np.array(_my_position)
-        _orientation = [self.current_pose.orientation.x,
-                        self.current_pose.orientation.y,
-                        self.current_pose.orientation.z,
-                        self.current_pose.orientation.w]
-
-        _delta = my_position- self.initial_cond[:3]
-        if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
-            #   Proportional control iniside takeoff_threshold
-            self.get_logger().info(f"Initial condition reached")
-            self.init_complete = True
-
-        msg = Twist()
-        _u = -self.gain_takeoff * _delta
-        _R = quaternion_matrix(_orientation)
-        _R = _R[:3,:]
-        _R = _R[:,:3]
-        _u = _R.T @ _u
-
-        _, _, _yaw = euler_from_matrix(_R)
-
-        _yaw = _yaw - self.initial_cond[3]
-        _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
-        _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
-
-        msg.linear.x = float(_u[0])
-        msg.linear.y = float(_u[1])
-        msg.linear.z = float(_u[2])
-        msg.angular.z = float(-self.gain_takeoff* _yaw)
-        self.cmd_pub.publish(msg)
-
-        self.get_logger().debug(f"Control input: {_u}")
-
-        #   Change state
-        if self.new_state == CONTROL and self.init_complete:
-            self.get_logger().info("State change: CONTROL")
-            self.state = self.s_control
-            return
-        if self.new_state == CONTROL and  not self.init_complete:
-            self.get_logger().info("Waiting for INITIAL CONDITION to finish, can not change to CONTROL")
-            self.new_state = INITCOND
-            return
-        if self.new_state == LAND:
-            self.get_logger().info("State change: LAND")
-            self.state = self.s_land
-            return
-        if self.new_state == HOLD:
-            self.get_logger().info("State change: HOLD")
-            self.state = self.s_hold
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-            return
-        if self.new_state == REFERENCE:
-            self.get_logger().info("State change: REFERENCE")
-            self.state = self.s_reference
-            self.init_complete = False
-
-    def s_reference(self):
-
-        _my_position = [self.current_pose.position.x,
-                        self.current_pose.position.y,
-                        self.current_pose.position.z]
-        my_position = np.array(_my_position)
-        _orientation = [self.current_pose.orientation.x,
-                        self.current_pose.orientation.y,
-                        self.current_pose.orientation.z,
-                        self.current_pose.orientation.w]
-
-        _delta = my_position- self.reference_pose[:3]
-        if np.linalg.norm(_delta) < self.takeoff_threshold and not self.init_complete:
-            #   Proportional control iniside takeoff_threshold
-            self.get_logger().info(f"Reference pose reached")
-            self.init_complete = True
-
-        msg = Twist()
-        _u = -self.gain_takeoff * _delta
-        _R = quaternion_matrix(_orientation)
-        _R = _R[:3,:]
-        _R = _R[:,:3]
-        _u = _R.T @ _u
-
-        _, _, _yaw = euler_from_matrix(_R)
-
-        _yaw = _yaw - self.reference_pose[3]
-        _yaw = _yaw + 2*np.pi if _yaw < np.pi else _yaw
-        _yaw = _yaw - 2*np.pi if _yaw > np.pi else _yaw
-
-        msg.linear.x = float(_u[0])
-        msg.linear.y = float(_u[1])
-        msg.linear.z = float(_u[2])
-        msg.angular.z = float(-self.gain_takeoff* _yaw)
-        self.cmd_pub.publish(msg)
-
-        self.get_logger().debug(f"Control input: {_u}")
-
-        #   Change state
-        if self.new_state == CONTROL and self.init_complete:
-            self.get_logger().info("State change: CONTROL")
-            self.state = self.s_control
-            return
-        if self.new_state == CONTROL and  not self.init_complete:
-            self.get_logger().info("Waiting for REFERENCE CONDITION to finish, can not change to CONTROL")
-            self.new_state = REFERENCE
-            return
-        if self.new_state == LAND:
-            self.get_logger().info("State change: LAND")
-            self.state = self.s_land
-            return
-        if self.new_state == HOLD:
-            self.get_logger().info("State change: HOLD")
-            self.state = self.s_hold
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-            return
-        if self.new_state == INITCOND:
-            self.get_logger().info("State change: INITCOND")
-            self.state = self.s_init_cond
-            self.init_complete = False
-
-    def s_land(self):
-        current_z = self.current_pose.position.z
-        msg = Twist()
-
-        # Descender controladamente
-        msg.linear.z = self.gain_takeoff* float(- current_z)
-        self.cmd_pub.publish(msg)
-
-
-        if current_z <= self.landing_threshold:
-            #   Landing finished
-            self.get_logger().info("¡Landing complete!")
-            self.state = self.s_idle
-            self.cmd_enable.publish(Bool(data=False))
-            self.cmd_pub.publish(Twist())
-            return
-        #   Change state
-        if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
-            self.get_logger().info("State change: IDLE")
-            self.state = self.s_idle
-            return
-        if self.new_state == HOLD:
-            self.get_logger().info("State change: HOLD")
-            self.state = self.s_hold
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-
-    def s_control(self):
-
-        self.m_vel.linear.x = float(self.u[0])
-        self.m_vel.linear.y = float(self.u[1])
-        self.m_vel.linear.z = float(self.u[2])
-        self.m_vel.angular.z = float(self.u[5])
-
-        try:
-            self.cmd_pub.publish(self.m_vel)
-        except Exception as e:
-            self.get_logger().error(f"Error with IBFC control: {str(e)}")
-            self.enable = False
-            self.cmd_enable.publish(Bool(data=self.enable))
-
-
-        #   Change state
-        if self.new_state == LAND:
-            self.get_logger().info("State change: LAND")
-            self.state = self.s_land
-            return
-        if self.new_state == HOLD:
-            self.get_logger().info("State change: HOLD")
-            self.state = self.s_hold
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-            return
-        if self.new_state == INITCOND:
-            self.get_logger().info("State change: INITCOND")
-            self.state = self.s_init_cond
-            self.init_complete = False
-            return
-        if self.new_state == REFERENCE:
-            self.get_logger().info("State change: REFERENCE")
-            self.state = self.s_reference
-            self.init_complete = False
-
-    def s_hold(self):
-
-        self.cmd_pub.publish(Twist())
-
-        if self.new_state == CONTROL:
-            self.get_logger().info("State change: CONTROL")
-            self.new_state = CONTROL
-            return
-        if self.new_state == LAND:
-            self.get_logger().info("State change: LAND")
-            self.state = self.s_land
-            return
-        if self.new_state == STOP:
-            self.get_logger().info("State change: STOP")
-            self.state = self.s_stop
-            return
-        if self.new_state == INITCOND:
-            self.get_logger().info("State change: INITCOND")
-            self.state = self.s_init_cond
-            self.init_complete = False
-            return
-        if self.new_state == REFERENCE:
-            self.get_logger().info("State change: REFERENCE")
-            self.state = self.s_reference
-            self.init_complete = False
-            return
-
-    def s_stop(self):
-        self.cmd_pub.publish(Twist())
-        self.cmd_pub.publish(Twist())
-        self.cmd_pub.publish(Twist())
-        self.cmd_enable.publish(Bool(data=False))
-        self.get_logger().info("State change: IDLE")
-        self.state = self.s_idle
 
 
 

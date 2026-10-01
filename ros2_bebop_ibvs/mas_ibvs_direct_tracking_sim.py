@@ -24,7 +24,7 @@ from .my_classes import *
 
 
 
-class Controller(State, FeatureTracker):
+class Controller( FeatureTracker):
 
     def __init__(self):
         super().__init__('Controller')
@@ -426,7 +426,7 @@ class Controller(State, FeatureTracker):
 
     def preproc_image(self):
         if  self.cv_image is None:
-            return None
+            return
         self.m_image = self.cv_image.copy()
         if len(self.p) > 2:
             self.custom_draw(self.m_image, self.p.T)

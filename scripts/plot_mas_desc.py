@@ -82,7 +82,13 @@ class Ploter():
         else:
             self.point_type = "features"
 
-        self.point_count = 2 if self.point_type == "features" else 8
+        self.point_count = 2
+        if self.point_type == "features":
+            self.point_count = 2
+        if self.point_type == "arucos":
+            self.point_count = 8
+        if self.point_type == "virtual":
+            self.point_count = int(2*len(_dict['points3D'])/3)
 
         pd = pd.reshape((-1,4))
         n = pd.shape[0]
@@ -238,7 +244,6 @@ class Ploter():
                         features[i]["v"] = features[i]["v"].T
                         features[i]["t"] = [t - t0 for t in features[i]["t"]]
                 self.features = features
-                # print(features)
 
 
 
@@ -267,13 +272,14 @@ class Ploter():
                                                     dtype = np.int64,
                                                     count = 1)
                                 idx = idx[0]
+                                # print(idx)
                                 _error = np.fromfile(fileH,
                                                     dtype = np.float64,
                                                     count = self.point_count)
                                 all_idx.add(idx)
 
-                                if (any(_error > 10)):
-                                    print(_error)
+                                # if (any(_error > 10)):
+                                #     print(_error)
                                 if idx in error:
                                     error[idx]["t"].append(time)
                                     error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
@@ -315,8 +321,8 @@ class Ploter():
                                                 count = self.point_count)
                             all_idx.add(idx)
 
-                            if (any(_error > 10)):
-                                print(_error)
+                            # if (any(_error > 10)):
+                            #     print(_error)
                             if idx in error:
                                 error[idx]["t"].append(time)
                                 error[idx]["v"] = np.concatenate([error[idx]["v"],_error])

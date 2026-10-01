@@ -432,7 +432,7 @@ class Controller(State, ArUcoTracker):
 
     def preproc_image(self):
         if  self.cv_image is None:
-            return None
+            return
         self.m_image = self.cv_image.copy()
         if self.corners is None:
             return
