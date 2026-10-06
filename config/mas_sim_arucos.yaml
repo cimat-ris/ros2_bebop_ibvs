@@ -101,7 +101,7 @@ control: "mas_ibvs_direct_virtualP_sim"
 # control: "mas_ibvs_direct_tracking_sim"
 # control: "mas_ibvs_direct_matching_sim"
 # gain: .1
-gain: .1
+gain: 1.
 # gain_w: 1.
 gain_w: 1.2
 img_depth: 2.3
@@ -114,7 +114,7 @@ polar: false
 # --------------------------------------------------------
 
 #    Virtual points
-world: "ground.world"
+# world: "ground.world"
 points3D: [0.,0.,0.,
            1.,0.,0.,
            1.,1.,0.,
@@ -123,7 +123,7 @@ points3D: [0.,0.,0.,
 # --------------------------------------------------------
 
 #    Feature based
-# world: "ground.world"
+world: "ground.world"
 
 nfeatures: 100
 scaleFactor: 1.2

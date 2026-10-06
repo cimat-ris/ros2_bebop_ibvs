@@ -512,6 +512,7 @@ class ImageProc(State):
         super().declare_parameter('K', [1.]*9)
         super().declare_parameter('CamR', [1.]*9)
         super().declare_parameter('CamT', [1.]*9)
+        super().declare_parameter('black_frame', '')
 
         self.K = super().get_parameter('K').value
         self.camR = super().get_parameter('CamR').value
@@ -524,7 +525,45 @@ class ImageProc(State):
         self.R_cam = np.array(self.camR).reshape((3,3))
         self.t_cam = np.array(self.camT)
 
+        self.black_frame = super().get_parameter('black_frame').value
+        if self.black_frame == '':
+            super().get_logger().error("Black frame configuration missing")
+            return
+        self.black_frame = cv2.imread(self.black_frame)
+
         self.p = None
+        self.video_writer = None
+
+    def __exit__(self):
+        if self.video_writer is None:
+            return
+        self.video_writer.write(self.black_frame, True)
+        self.video_writer.release()
+
+    def video_config(self, prefix):
+        # (1080, 1920)
+        self.video_writer = cv2.VideoWriter(
+            prefix + '.avi',
+            cv2.VideoWriter_fourcc(*'MPEG'),
+            30, (1920,1080 ))
+        self.v_black_frame = cv2.resize(
+            self.black_frame,
+            (1920,1080 ),
+            interpolation=cv2.INTER_CUBIC)
+
+    def video_frame(self, frame):
+        if frame is None:
+            self.video_writer.write(self.v_black_frame)
+            return
+        _frame = cv2.resize(
+            frame,
+            (1920,1080 ),
+            interpolation=cv2.INTER_CUBIC)
+        self.video_writer.write(_frame)
+
+
+        #   TODO: ensure sync
+
 
     def normalize(self, p):
         _p = p.copy()
@@ -640,12 +679,14 @@ class ArUcoTracker(ImageProc):
         markers = markers_list.index(aruco_dictionary)
         aruco_dict = cv2.aruco.getPredefinedDictionary(markers)
         parameters = cv2.aruco.DetectorParameters()
+        #   TODO Expand using defaults in docs
         # parameters.adaptiveThreshWinSizeMin = super().get_parameter('adaptiveThreshWinSizeMin').value
         # parameters.adaptiveThreshWinSizeMax = super().get_parameter('adaptiveThreshWinSizeMax').value
         # parameters.adaptiveThreshWinSizeStep = super().get_parameter('adaptiveThreshWinSizeStep').value
         # parameters.adaptiveThreshConstant = super().get_parameter('adaptiveThreshConstant').value
         # parameters.perspectiveRemovePixelPerCell = super().get_parameter('perspectiveRemovePixelPerCell').value
         # parameters.perspectiveRemoveIgnoredMarginPerCell = super().get_parameter('perspectiveRemoveIgnoredMarginPerCell').value
+
 
         self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
@@ -694,20 +735,13 @@ class ArUcoTracker(ImageProc):
     #     _query = list(set(_query))
 
 
-    def config_reference(self, ref_name = None):
+    def config_reference(self, ref_name):
 
-        if ref_name is None:
-
-            # TODO: keep a fized image frame for no reference
-
-            _img = cv2.imread("reference.png")
-            gray_image = cv2.cvtColor(_img, cv2.COLOR_BGR2GRAY)
-        else:
-            self.image_ref = cv2.imread(ref_name)
-            if  self.image_ref is None :
-                return False
-            gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
-            self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
+        self.image_ref = cv2.imread(ref_name)
+        if  self.image_ref is None :
+            return False
+        gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
+        self.corners_ref, self.ids_ref, rejected = self.detector.detectMarkers(gray_image)
 
         return True
 
@@ -778,7 +812,7 @@ class FeatureTracker(ImageProc):
         self.desc_self = None
         self.reset_tracking = False
 
-    def config_reference(self, ref_name = None):
+        #   TODO Expand using defaults in docs
 
         self.lk_params = dict(winSize=(15, 15),
             maxLevel=2,
@@ -803,22 +837,16 @@ class FeatureTracker(ImageProc):
 
         self.flann = cv2.FlannBasedMatcher(index_params)
 
-        if ref_name is None:
+        self.prev_image = cv2.cvtColor(self.black_frame, cv2.COLOR_BGR2GRAY)
 
-            # TODO: keep a fized image frame for no reference
-
-            _img = cv2.imread("reference.png")
-            gray_image = cv2.cvtColor(_img, cv2.COLOR_BGR2GRAY)
-        else:
-            self.image_ref = cv2.imread(ref_name)
-            if  self.image_ref is None :
-                return False
-            gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
-            self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
-            if self.desc_ref is None:
-                return False
-        self.prev_image = np.zeros((gray_image.shape),
-                                    dtype = gray_image.dtype)
+    def config_reference(self, ref_name):
+        self.image_ref = cv2.imread(ref_name)
+        if  self.image_ref is None :
+            return False
+        gray_image = cv2.cvtColor(self.image_ref, cv2.COLOR_BGR2GRAY)
+        self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
+        if self.desc_ref is None:
+            return False
 
         return True
 
@@ -1011,10 +1039,6 @@ class FeatureMatcher(ImageProc):
         self.flann_ratio = super().get_parameter('flann_ratio').value
         self.matcher_threshold = super().get_parameter('matcher_threshold').value
 
-
-    def config_reference(self, ref_name):
-
-
         self.orb = cv2.ORB_create(
             nfeatures    = int( self.nfeatures ),
             scaleFactor  = self.scaleFactor,
@@ -1034,6 +1058,7 @@ class FeatureMatcher(ImageProc):
 
         self.flann = cv2.FlannBasedMatcher(index_params)
 
+    def config_reference(self, ref_name):
         self.image_ref = cv2.imread(ref_name)
         if  self.image_ref is None :
             return False

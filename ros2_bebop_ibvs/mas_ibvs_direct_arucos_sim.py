@@ -23,14 +23,14 @@ from .my_classes import *
 
 
 
-class Controller(State, ArUcoTracker):
+class Controller( ArUcoTracker):
 
     def __init__(self):
         super().__init__('Controller')
         
         #   Save data
         enable_IBVS = self.proc_paramaters()
-        self.config_reference()
+        # self.config_reference()
 
 
         #   State
@@ -50,6 +50,10 @@ class Controller(State, ArUcoTracker):
             self.svd = [None]*self.n_agents
             if  self.k_int != 0:
                 self.u_log = [np.zeros(6), np.zeros(6)]
+
+        #   Video
+        v_name = os.path.join(self.output,"matching_"+str(self.label))
+        self.video_config(v_name)
 
         #   Publishers
         qos = QoSProfile(depth=2)
@@ -130,8 +134,6 @@ class Controller(State, ArUcoTracker):
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
-        self.declare_parameter('CamR', [1.]*9)
-        self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
@@ -154,8 +156,6 @@ class Controller(State, ArUcoTracker):
 
         # self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
-        self.camR = self.get_parameter('CamR').value
-        self.camT = self.get_parameter('CamT').value
         self.initial_cond = self.get_parameter('p0').value
         self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
@@ -193,9 +193,6 @@ class Controller(State, ArUcoTracker):
         with open(_name, 'w') as yaml_file:
             yaml.dump(param_dict, yaml_file)
 
-        #   Frame transformation robot-camera
-        self.R_cam = np.array(self.camR).reshape((3,3))
-        self.t_cam = np.array(self.camT)
 
         #   inital conditions
         if len(self.reference_pose) != 4*self.n_agents:
@@ -486,7 +483,7 @@ class Controller(State, ArUcoTracker):
                 self.get_logger().error("Invalid Ls matrix")
                 continue
 
-            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)
+            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
             _n += 1.
 
             # if self.label == 0:
@@ -494,7 +491,6 @@ class Controller(State, ArUcoTracker):
             #     self.get_logger().info(f"{self.p})")
             #     self.get_logger().info(str(self.error[j]))
 
-            # TODO image draw
             if self.m_image is None:
                 continue
 
@@ -612,7 +608,7 @@ class Controller(State, ArUcoTracker):
             self.u = np.zeros(6)
             return
         # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
-        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)
+        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
         # BEGIN debug
         # if self.label == 0:
         #     self._u = np.zeros(6)
@@ -687,12 +683,13 @@ class Controller(State, ArUcoTracker):
         self.preproc_image()
         #   Exec state
         self.state()
+        #   Video
+        self.video_frame(self.m_image)
+
         #   Publish matching image
         if self.m_image is None:
             return
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.m_image, "bgr8"))
-        #   Save video frame
-        # self.video_writer.write(self.m_image)
 
 
 def main(args=None):

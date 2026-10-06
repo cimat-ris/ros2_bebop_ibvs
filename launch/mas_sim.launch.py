@@ -26,6 +26,8 @@ def generate_launch_description():
         config = yaml.safe_load(file)
     config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', config['ref_prefix'])
     config['use_sim_time'] = True
+    config['black_frame'] = os.path.join(pkg_bebop_ibvs, 'config', 'black_frame.png')
+
     if not os.path.exists(config["output"]):
         print(f"Output directory  {config["output"]} does not exists")
         return

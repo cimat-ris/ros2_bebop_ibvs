@@ -32,7 +32,6 @@ class Controller( VirtualTracker):
         #   Save data
         enable_IBVS = self.proc_paramaters()
 
-
         #   State
         self.u = np.zeros(6)
         self._u = np.zeros(6)
@@ -49,6 +48,10 @@ class Controller( VirtualTracker):
             self.svd = [None]*self.n_agents
             if  self.k_int != 0:
                 self.u_log = [np.zeros(6), np.zeros(6)]
+
+        #   Video
+        v_name = os.path.join(self.output,"matching_"+str(self.label))
+        self.video_config(v_name)
 
         #   Publishers
         qos = QoSProfile(depth=2)
@@ -108,12 +111,6 @@ class Controller( VirtualTracker):
         self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
 
 
-
-
-
-
-
-
     def proc_paramaters(self):
 
         self.declare_parameter('frequency', 50.0)
@@ -129,8 +126,6 @@ class Controller( VirtualTracker):
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
-        # self.declare_parameter('CamR', [1.]*9)
-        # self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
@@ -151,10 +146,7 @@ class Controller( VirtualTracker):
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_int').value
 
-        # self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
-        # self.camR = self.get_parameter('CamR').value
-        # self.camT = self.get_parameter('CamT').value
         self.initial_cond = self.get_parameter('p0').value
         self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
@@ -192,10 +184,6 @@ class Controller( VirtualTracker):
         with open(_name, 'w') as yaml_file:
             yaml.dump(param_dict, yaml_file)
 
-        #   Frame transformation robot-camera
-        # self.R_cam = np.array(self.camR).reshape((3,3))
-        # self.t_cam = np.array(self.camT)
-
         #   inital conditions
         if len(self.reference_pose) != 4*self.n_agents:
             return False
@@ -213,7 +201,6 @@ class Controller( VirtualTracker):
                        [-1., 0., 0.],
                        [0., 0., -1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
-        # self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
         self.pref[:,:3] = self.pref[:,:3] / self.reference_pose[:,2].reshape((-1,1))
@@ -222,8 +209,6 @@ class Controller( VirtualTracker):
         self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.reference_pose = self.reference_pose[self.label]
-
-
 
 
         #   Graph Laplacian
@@ -345,7 +330,6 @@ class Controller( VirtualTracker):
         if self.deltas is None:
             return
 
-        # TODO
         with open(self.features_d, 'ab') as f:
             data = (t, 0)
             data += tuple(self.p.reshape(-1))
@@ -433,7 +417,6 @@ class Controller( VirtualTracker):
             # # END debug
 
 
-            # TODO image draw
             if self.m_image is None:
                 continue
             # self.get_logger().info(str(complement))
@@ -533,12 +516,13 @@ class Controller( VirtualTracker):
         self.preproc_image()
         #   Exec state
         self.state()
+        #   Video
+        self.video_frame(self.m_image)
+
         #   Publish matching image
         if self.m_image is None:
             return
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.m_image, "bgr8"))
-        #   Save video frame
-        # self.video_writer.write(self.m_image)
 
 
 def main(args=None):

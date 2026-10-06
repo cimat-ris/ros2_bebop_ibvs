@@ -54,6 +54,10 @@ class Controller(FeatureMatcher):
             if  self.k_int != 0:
                 self.u_log = [np.zeros(6), np.zeros(6)]
 
+        #   Video
+        v_name = os.path.join(self.output,"matching_"+str(self.label))
+        self.video_config(v_name)
+
         #   Publishers
         qos = QoSProfile(depth=2)
         self.create_publishers(qos)
@@ -133,8 +137,6 @@ class Controller(FeatureMatcher):
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
-        self.declare_parameter('CamR', [1.]*9)
-        self.declare_parameter('CamT', [1.]*9)
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
@@ -155,10 +157,7 @@ class Controller(FeatureMatcher):
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_int').value
 
-        # self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
-        self.camR = self.get_parameter('CamR').value
-        self.camT = self.get_parameter('CamT').value
         self.initial_cond = self.get_parameter('p0').value
         self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
@@ -221,9 +220,6 @@ class Controller(FeatureMatcher):
         self.reference_pose = self.reference_pose[self.label]
 
 
-        #   Frame transformation robot-camera
-        self.R_cam = np.array(self.camR).reshape((3,3))
-        self.t_cam = np.array(self.camT)
 
         #   Graph Laplacian
         if len(self.L) != self.n_agents**2 :
@@ -467,10 +463,9 @@ class Controller(FeatureMatcher):
                 self.get_logger().error("Invalid Ls matrix")
                 continue
 
-            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)
+            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1) / float(self.error[j].shape[1])
             _n += 1.
 
-            # TODO image draw
             if self.m_image is None:
                 continue
 
@@ -536,7 +531,7 @@ class Controller(FeatureMatcher):
             self.data2save = True
             self.save_data()
 
-        super().s_control(self.u)
+        super().s_control()
 
 
     def control_loop(self):
@@ -547,12 +542,13 @@ class Controller(FeatureMatcher):
         self.preproc_image()
         #   Exec state
         self.state()
+        #   Video
+        self.video_frame(self.m_image)
+
         #   Publish matching image
         if self.m_image is None:
             return
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.m_image, "bgr8"))
-        #   Save video frame
-        # self.video_writer.write(self.m_image)
 
 
 def main(args=None):
