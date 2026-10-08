@@ -205,10 +205,10 @@ class Controller(FeatureMatcher):
         self.reference_pose =  np.array(self.reference_pose)
         self.reference_pose = self.reference_pose.reshape((-1,4))
 
-        #   TODO: generalizar
-        _R = np.array([[0., -1., 0.],
-                       [-1., 0., 0.],
-                       [0., 0., -1.]])
+        psi = self.reference_pose[self.label,3]
+        _R = np.array([[ np.sin(psi), -np.cos(psi),  0.],
+                       [-np.cos(psi), -np.sin(psi),  0.],
+                       [          0.,           0., -1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
