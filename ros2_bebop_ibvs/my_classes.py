@@ -467,7 +467,7 @@ class State(Node):
 
         if self.new_state == CONTROL:
             self.get_logger().info("State change: CONTROL")
-            self.new_state = CONTROL
+            self.state = self.s_control
             return
         if self.new_state == LAND:
             self.get_logger().info("State change: LAND")
@@ -1129,8 +1129,4 @@ class FeatureMatcher(ImageProc):
 
 
     #   Takes a list of points and overlaps the matches in the same picture
-
-
-
-
 

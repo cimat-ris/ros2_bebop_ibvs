@@ -71,6 +71,10 @@ class Ploter():
             self.error_limits = _dict['error_limits']
         else:
             self.error_limits = [-1., 1.]
+        if 'error_int_limits' in _dict:
+            self.error_int_limits = _dict['error_int_limits']
+        else:
+            self.error_int_limits = [-10., 10.]
 
         if 'camera_angle' in _dict:
             self.camera_angle = eval(_dict['camera_angle'])
@@ -101,6 +105,7 @@ class Ploter():
 
 
         self.error = [None] * self.n_agents
+        self.error_int = [None] * self.n_agents
         self.position = [None] * self.n_agents
         self.log = [None] * self.n_agents
 
@@ -130,9 +135,7 @@ class Ploter():
                     _concat = (position[:4,:], np.zeros((2,rows)), position[4,:].reshape((1,-1)))
                     position = np.concatenate(_concat)
                     position[0,:] -= position[0,0]
-                    # position[4,:] = -pi/2.
-                    position[5,:] = pi
-                    # position[6,:] -= pi/2.
+                    position[5,:] = self.camera_angle
                 self.position[label] = position
 
         name = os.path.join(self.directory ,f"velocities_{label}.dat")
@@ -295,50 +298,50 @@ class Ploter():
                                 error[i]["t"] = [t - t0 for t in error[i]["t"]]
                         self.error[label][k] = error
 
-            t0 = None # Used for integral time phasing
-            name = os.path.join(self.directory ,f"error_{label}.dat")
-            if os.path.exists(name):
-                length = os.path.getsize(name)
-                if length > 0:
-                    with open(name, 'rb') as fileH:
-                        size = (self.point_count+1)*b_double + b_int
-                        rows = (length) / size
-                        rows = int(np.floor(rows))
+        t0 = None # Used for integral time phasing
+        name = os.path.join(self.directory ,f"error_{label}.dat")
+        if os.path.exists(name):
+            length = os.path.getsize(name)
+            if length > 0:
+                with open(name, 'rb') as fileH:
+                    size = (self.point_count+1)*b_double + b_int
+                    rows = (length) / size
+                    rows = int(np.floor(rows))
 
-                        error = {}
+                    error = {}
 
-                        for i in range (rows):
-                            time = np.fromfile(fileH,
-                                                dtype = np.float64,
-                                                count = 1)
-                            time = time[0]
-                            idx = np.fromfile(fileH,
-                                                dtype = np.int64,
-                                                count = 1)
-                            idx = idx[0]
-                            _error = np.fromfile(fileH,
-                                                dtype = np.float64,
-                                                count = self.point_count)
-                            all_idx.add(idx)
+                    for i in range (rows):
+                        time = np.fromfile(fileH,
+                                            dtype = np.float64,
+                                            count = 1)
+                        time = time[0]
+                        idx = np.fromfile(fileH,
+                                            dtype = np.int64,
+                                            count = 1)
+                        idx = idx[0]
+                        _error = np.fromfile(fileH,
+                                            dtype = np.float64,
+                                            count = self.point_count)
+                        all_idx.add(idx)
 
-                            # if (any(_error > 10)):
-                            #     print(_error)
-                            if idx in error:
-                                error[idx]["t"].append(time)
-                                error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
-                            else:
-                                _d = {"t":[time], "v":_error}
-                                error[idx] = _d
+                        # if (any(_error > 10)):
+                        #     print(_error)
+                        if idx in error:
+                            error[idx]["t"].append(time)
+                            error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
+                        else:
+                            _d = {"t":[time], "v":_error}
+                            error[idx] = _d
 
-                        t0 = [ error[key]["t"][0] for  key in error]
-                        t0 = min(t0)
-                        for i in error:
-                            error[i]["v"] = error[i]["v"].reshape((-1,self.point_count))
-                            # error[i]["v"] = error[i]["v"].T
-                            error[i]["t"] = [t - t0 for t in error[i]["t"]]
-                    self.error[label][label] = error
+                    t0 = [ error[key]["t"][0] for  key in error]
+                    t0 = min(t0)
+                    for i in error:
+                        error[i]["v"] = error[i]["v"].reshape((-1,self.point_count))
+                        # error[i]["v"] = error[i]["v"].T
+                        error[i]["t"] = [t - t0 for t in error[i]["t"]]
+                self.error[label][label] = error
 
-
+        #   Calculate joined error if file does not exist
         if self.error[label][label] is None and any([not _dict is None for _dict in self.error[label] ]) :
             #   Sum error
             all_idx = list(all_idx)
@@ -373,84 +376,129 @@ class Ploter():
             self.error[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
 
 
-        self.error_int = [None]*self.n_agents
-        # all_idx = set()
-        # for k in range(n):
-        #     if k != label:
-        #         name = os.path.join(self.directory ,f"error_int_{label}_{k}.dat")
-        #
-        #         if os.path.exists(name):
-        #             length = os.path.getsize(name)
-        #             if length > 0:
-        #                 with open(name, 'rb') as fileH:
-        #                     size = 9*d + 8
-        #                     rows = (length) / size
-        #                     rows = int(np.floor(rows))
-        #
-        #                     error_int[k] = {}
-        #
-        #                     for i in range (rows):
-        #                         time = np.fromfile(fileH,
-        #                                             dtype = np.float64,
-        #                                             count = 1)
-        #                         time = time[0]
-        #                         idx = np.fromfile(fileH,
-        #                                             dtype = np.int64,
-        #                                             count = 1)
-        #                         idx = idx[0]
-        #                         all_idx.add(idx)
-        #                         _error = np.fromfile(fileH,
-        #                                             dtype = np.float64,
-        #                                             count = 8)
-        #                         if (any(_error > 10)):
-        #                             print(_error)
-        #                         if idx in error_int[k]:
-        #                             error_int[k][idx]["t"].append(time)
-        #                             error_int[k][idx]["v"] = np.concatenate([error_int[k][idx]["v"],_error])
-        #                         else:
-        #                             _d = {"t":[time], "v":_error}
-        #                             error_int[k][idx] = _d
-        #
-        #                     # t0 = [ error_int[k][key]["t"][0] for  key in error_int[k]]
-        #                     # t0 = min(t0)
-        #                     for i in error_int[k]:
-        #                         error_int[k][i]["v"] = error_int[k][i]["v"].reshape((-1,8))
-        #                         # error_int[k][i]["v"] = error_int[k][i]["v"].T
-        #                         # error_int[k][i]["t"] = [t - t0 for t in error_int[k][i]["t"]]
-        #
-        # if any([not _dict is None for _dict in error_int ]):
-        #     #   Sum error
-        #     all_idx = list(all_idx)
-        #     all_idx.sort()
-        #     error_int[label] = {}
-        #
-        #     #   Join time
-        #     t = set()
-        #     for _dict in error_int: #   For each agent
-        #         # print(_dict)
-        #         for idx in _dict:   # for each aruco
-        #             # print(idx)
-        #             for _t in _dict[idx]['t']: # For each time step
-        #                 t.add(_t)
-        #     t = list(t)
-        #     t.sort()    #   Just in case
-        #
-        #     # Sum error
-        #     new_error = np.zeros((len(t),8*len(all_idx)))
-        #     for i in range(len(t)):
-        #         _v = np.zeros(8*len(all_idx)) # _v the error at a time step
-        #         for _dict in error_int: #   For each agent
-        #             for idx in _dict:   # for each aruco
-        #                 if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
-        #                     t_id = _dict[idx]['t'].index(t[i])
-        #                     v_id = all_idx.index(idx)
-        #                     _v[v_id*8 : v_id*8+8] += _dict[idx]['v'][t_id]
-        #         new_error[i,:] = _v # Tal vez copy
-        #     if t0 is None:
-        #         t0 = t[0]
-        #     error_int = {'t': [_t-t0 for _t in t], 'v': new_error}
-        # else:
-        #     error_int = None
+        self.error_int[label] = [None]*self.n_agents
+        all_idx = set()
+        for k in range(self.n_agents):
+            if k != label:
+                name = os.path.join(self.directory ,f"error_int_{label}_{k}.dat")
+
+                if os.path.exists(name):
+                    length = os.path.getsize(name)
+                    if length > 0:
+                        with open(name, 'rb') as fileH:
+                            size = (self.point_count+1)*b_double + b_int
+                            rows = (length) / size
+                            rows = int(np.floor(rows))
+
+                            error_int = {}
+
+                            for i in range (rows):
+                                time = np.fromfile(fileH,
+                                                    dtype = np.float64,
+                                                    count = 1)
+                                time = time[0]
+                                idx = np.fromfile(fileH,
+                                                    dtype = np.int64,
+                                                    count = 1)
+                                idx = idx[0]
+                                all_idx.add(idx)
+                                _error = np.fromfile(fileH,
+                                                    dtype = np.float64,
+                                                    count = 8)
+                                if (any(_error > 10)):
+                                    print(_error)
+                                if idx in error_int:
+                                    error_int[idx]["t"].append(time)
+                                    error_int[idx]["v"] = np.concatenate([error_int[idx]["v"],_error])
+                                else:
+                                    _d = {"t":[time], "v":_error}
+                                    error_int[idx] = _d
+
+                            # t0 = [ error_int[key]["t"][0] for  key in error_int]
+                            # t0 = min(t0)
+                            for i in error_int:
+                                error_int[i]["v"] = error_int[i]["v"].reshape((-1,8))
+                                # error_int[i]["v"] = error_int[i]["v"].T
+                                # error_int[i]["t"] = [t - t0 for t in error_int[i]["t"]]
+                        self.error_int[label][k] = error_int
+
+        t0 = None # Used for integral time phasing
+        name = os.path.join(self.directory ,f"error_int_{label}.dat")
+        if os.path.exists(name):
+            length = os.path.getsize(name)
+            if length > 0:
+                with open(name, 'rb') as fileH:
+                    size = (self.point_count+1)*b_double + b_int
+                    rows = (length) / size
+                    rows = int(np.floor(rows))
+
+                    error = {}
+
+                    for i in range (rows):
+                        time = np.fromfile(fileH,
+                                            dtype = np.float64,
+                                            count = 1)
+                        time = time[0]
+                        idx = np.fromfile(fileH,
+                                            dtype = np.int64,
+                                            count = 1)
+                        idx = idx[0]
+                        _error = np.fromfile(fileH,
+                                            dtype = np.float64,
+                                            count = self.point_count)
+                        all_idx.add(idx)
+
+                        # if (any(_error > 10)):
+                        #     print(_error)
+                        if idx in error:
+                            error[idx]["t"].append(time)
+                            error[idx]["v"] = np.concatenate([error[idx]["v"],_error])
+                        else:
+                            _d = {"t":[time], "v":_error}
+                            error[idx] = _d
+
+                    t0 = [ error[key]["t"][0] for  key in error]
+                    t0 = min(t0)
+                    for i in error:
+                        error[i]["v"] = error[i]["v"].reshape((-1,self.point_count))
+                        # error[i]["v"] = error[i]["v"].T
+                        error[i]["t"] = [t - t0 for t in error[i]["t"]]
+                self.error_int[label][label] = error
+
+        #   Calculate joined error if file does not exist
+        if self.error_int[label][label] is None and any([not _dict is None for _dict in self.error_int[label] ]):
+            #   Sum error
+            all_idx = list(all_idx)
+            all_idx.sort()
+
+            #   Join time
+            t = set()
+            for _dict in self.error_int[label]: #   For each agent
+                # print(_dict)
+                if _dict is None:
+                    continue
+                for idx in _dict:   # for each idx
+                    # print(idx)
+                    for _t in _dict[idx]['t']: # For each time step
+                        t.add(_t)
+            t = list(t)
+            t.sort()    #   Just in case
+
+            # Sum error
+            new_error = np.zeros((len(t),self.point_count*len(all_idx)))
+            for i in range(len(t)):
+                _v = np.zeros(self.point_count*len(all_idx)) # _v the error at a time step
+                for _dict in self.error_int[label]: #   For each agent
+                    if not _dict is None:
+                        for idx in _dict:   # for each aruco
+                            if t[i] in _dict[idx]['t']:  #  get slice of error and add to _v
+                                t_id = _dict[idx]['t'].index(t[i])
+                                v_id = all_idx.index(idx)
+                                _v[v_id*self.point_count : (v_id+1)*self.point_count] += _dict[idx]['v'][t_id]
+                new_error[i,:] = _v # Tal vez copy
+            t0 = t[0]
+            self.error_int[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
+
 
         name = os.path.join(self.directory ,f"log_{label}.dat")
         self.log[label] = [None]*self.n_agents
@@ -493,9 +541,10 @@ class Ploter():
             plotVel(self.directory, self.velocities_log[0],
                     f"Velocities_prop{sufx}.pdf",
                     lims = self.vel_limits)
-        # if not velocities_log[1] is None:
-        #     print("Ploting VELOCITIES Log Integral ")
-        #     plotVel(self.directory, velocities_log[1], f"Velocities_int{sufx}.pdf")
+        if not self.velocities_log[1] is None:
+            print("Ploting Velocities Log Integral ")
+            plotVel(self.directory, self.velocities_log[1], f"Velocities_int{sufx}.pdf")
+
         if not self.features is None:
             print("Ploting Features")
             plotFeat(self.directory,  self.features, f"Features{sufx}.pdf")
@@ -513,10 +562,21 @@ class Ploter():
                             self.error[i][j],
                             f"Error_feature{sufx}_{j}.pdf",
                             lims = self.error_limits)
+
+        if not self.error_int[i][i] is None:
+            print("Ploting Integral Error")
+            plotError(self.directory,
+                      self.error_int[i][i],
+                      f"Error_integral{sufx}.pdf",
+                      lims = self.error_int_limits)
+            for j in range(self.n_agents):
+                if j != i and not self.error_int[i][j] is None:
+                    # print(self.error_int[i][j])
+                    plotError(self.directory,
+                            self.error_int[i][j],
+                            f"Error_integral{sufx}_{j}.pdf",
+                            lims = self.error_int_limits)
             # print(error[i])
-        # if not error_int is None:
-        #     print("Ploting Integral Error")
-        #     plotError(self.directory, error_int, f"Error_int{sufx}.pdf", lims = [-1,1])
         if not self.position[i] is None:
             print("Ploting pose graphics")
             plotPosition(self.directory, self.position[i][[0,1,2,3,6],:], f"State{sufx}.pdf")
@@ -595,17 +655,6 @@ class Ploter():
     def plot_error_state(self, name):
         error_state_6(self.pd,  self.agents, name = name)
 
-    def fit_position(self):
-
-        position = [None]*self.n_agents
-        for i in range(self.n_agents):
-            steps = self.position[i].shape[1]
-            _p = (self.position[i][:4,:],  np.zeros((2,steps)), self.position[i][4,:].reshape((1,-1)))
-            _p = np.concatenate(_p)
-            _p[4,:] = -self.camera_angle
-            _p[6,:] -= pi
-            position[i] = _p
-        self.position_fited = position
 
     def proc_joined(self):
 
@@ -613,7 +662,6 @@ class Ploter():
             self.join_error()
 
         self.get_formation_error()
-        self.fit_position()
 
     def plot_joined(self):
 
@@ -628,9 +676,9 @@ class Ploter():
             print("Ploting Joined Error")
             plotError(self.directory, self.formation_error, f"Formation_error.pdf", th = 0.0)
 
-        if not any([( i is None) for i in self.position_fited]):
+        if not any([( i is None) for i in self.position]):
             print("Ploting 3D")
-            plot3D(self.directory, self.position_fited, self.pd, f"3DPlot.pdf")
+            plot3D(self.directory, self.position, self.pd, f"3DPlot.pdf")
 
 #   AUXILIARY FUNCTIONS
 

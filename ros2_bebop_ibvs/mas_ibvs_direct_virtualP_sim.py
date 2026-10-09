@@ -39,7 +39,6 @@ class Controller( VirtualTracker):
         self.cv_image = None
         self.m_image = None
         self.error = [None]*self.n_agents
-        self._err_int = [None]*self.n_agents
         self.norm = -1.
         self.deltas = [None]*self.n_agents
         self.s_format = 'di' + 'dd'* self.points3D.shape[1]
@@ -61,12 +60,11 @@ class Controller( VirtualTracker):
         if enable_IBVS:
 
             #   config control
-            if self.k_int != 0:
-                self.ids_int = [[] for i in range(self.n_agents)]
-                self.err_int = [[] for i in range(self.n_agents)]
+            if self.k_int != 0.:
+                self.err_int = np.zeros((2,self.points3D.shape[1]))
                 # self.err_int = [np.array([[],[]])]*self.n_agents
-                self.tick = -1.
-                self.tock = -1.
+                self.tock = self.get_clock().now().nanoseconds * 1e-9
+                self.tick = self.tock
 
             #   Config data storage
             self.config_data_storage()
@@ -122,7 +120,7 @@ class Controller( VirtualTracker):
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
-        self.declare_parameter('gain_int', 0.)
+        self.declare_parameter('gain_integral', 0.)
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
@@ -144,7 +142,7 @@ class Controller( VirtualTracker):
         self.img_depth = self.get_parameter('img_depth').value
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
-        self.k_int = self.get_parameter('gain_int').value
+        self.k_int = self.get_parameter('gain_integral').value
 
         self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
@@ -197,9 +195,9 @@ class Controller( VirtualTracker):
         self.reference_pose = self.reference_pose.reshape((-1,4))
 
         psi = self.reference_pose[self.label,3]
-        _R = np.array([[ np.sin(psi), -np.cos(psi),  0.],
-                       [-np.cos(psi), -np.sin(psi),  0.],
-                       [          0.,           0., -1.]])
+        _R = self.R_cam @ np.array([[np.cos(psi), -np.sin(psi), 0.],
+                                    [np.sin(psi),  np.cos(psi), 0.],
+                                    [         0.,           0., 1.]])
 
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
 
@@ -209,7 +207,6 @@ class Controller( VirtualTracker):
         self.pref[self.pref[:,3] >  np.pi, 3] -= np.pi
 
         self.reference_pose = self.reference_pose[self.label]
-
 
         #   Graph Laplacian
         if len(self.L) != self.n_agents**2 :
@@ -256,20 +253,18 @@ class Controller( VirtualTracker):
                 self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
                 with open(self.log_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
-        #     if self.k_int != 0.:
-        #         self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
-        #         with open(self.vel_log_d_0, 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
-        #         self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
-        #         with open(self.vel_log_d_1, 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
-        #
-        # if self.k_int != 0.:
-        #     self.error_int_d = [None]*self.n_agents
-        #     for j in self.in_neighbors:
-        #         self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-        #         with open(self.error_int_d[j], 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
+            if self.k_int != 0.:
+                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+                with open(self.vel_log_d_0, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+                with open(self.vel_log_d_1, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
+        if self.k_int != 0.:
+            self.error_int_d = os.path.join(self.output, f"error_int_{self.label}.dat")
+            with open(self.error_int_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
 
 
     def state_changed_ibvs(self, msg):
@@ -300,6 +295,38 @@ class Controller( VirtualTracker):
 
         self.project(self.cv_image)
 
+    def save_features(self, t):
+        with open(self.features_d, 'ab') as f:
+            data = (t, 0)
+            data += tuple(self.p.reshape(-1))
+            binary = struct.pack(self.s_format, *data)
+            f.write(binary)
+
+        for j in self.in_neighbors:
+            if self.error[j] is None:
+                continue
+            with open(self.error_d[j], 'ab') as f:
+
+                data = (t, 0)
+                data += tuple(self.error[j].reshape(-1))
+                binary = struct.pack(self.s_format, *data)
+                f.write(binary)
+        if self.error[self.label] is None:
+            return
+        with open(self.error_d[self.label], 'ab') as f:
+
+            data = (t, 0)
+            data += tuple(self.error[self.label].reshape(-1))
+            binary = struct.pack(self.s_format, *data)
+            f.write(binary)
+
+    def save_integral(self, t):
+
+        with open(self.error_int_d, 'ab') as f:
+            data = (t, 0)
+            data += tuple(self.err_int.reshape(-1))
+            binary = struct.pack(self.s_format, *data)
+            f.write(binary)
 
     def save_data(self):
 
@@ -327,32 +354,12 @@ class Controller( VirtualTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
-        if self.deltas is None:
-            return
+        if not self.deltas is None:
+            self.save_features(t)
 
-        with open(self.features_d, 'ab') as f:
-            data = (t, 0)
-            data += tuple(self.p.reshape(-1))
-            binary = struct.pack(self.s_format, *data)
-            f.write(binary)
+        if self.k_int != 0:
+            self.save_integral(t)
 
-        for j in self.in_neighbors:
-            if self.error[j] is None:
-                continue
-            with open(self.error_d[j], 'ab') as f:
-
-                data = (t, 0)
-                data += tuple(self.error[j].reshape(-1))
-                binary = struct.pack(self.s_format, *data)
-                f.write(binary)
-        if not self.error[self.label] is None:
-            with open(self.error_d[self.label], 'ab') as f:
-
-                data = (t, 0)
-                data += tuple(self.error[self.label].reshape(-1))
-                binary = struct.pack(self.s_format, *data)
-                f.write(binary)
-        #
 
 
     def delta_receiver(self, msg):
@@ -477,7 +484,114 @@ class Controller( VirtualTracker):
 
         return
 
+    def control_int(self):
+
+        self.error[self.label] = np.zeros(self.points.shape)
+
+        if self.enable_log:
+            _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+        for j in self.in_neighbors:
+            if self.deltas[j] is None:
+                continue
+
+            complement = self.deltas[j] - 1.*self.pref[j,:2].reshape((2,1))
+            self.error[j] = complement - self.points
+            self.error[self.label] += self.error[j]
+
+            # # BEGIN debug
+            # if self.label == 0:
+            #     # self.get_logger().info(str(self.error[j]))
+            #     # self.get_logger().info(str(idx))
+            #     self.get_logger().info(str(self.error[self.label]))
+            #
+            # # END debug
+
+
+            if self.m_image is None:
+                continue
+            # self.get_logger().info(str(complement))
+            self.custom_draw_matching(self.m_image,
+                        self.points,
+                        # complement,
+                        self.deltas[j],
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
+
+
+        # mask = np.logical_or(self.error[self.label][0,:] !=0.,
+        #                      self.error[self.label][1,:] !=0.)
+
+
+
+        # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        L_inv = Inv_Moore_Penrose(self.L)
+        if L_inv is None:
+            self.get_logger().error("Invalid Ls matrix")
+            self._u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        _error  = self.error[self.label].T.reshape(-1)
+        _error += self.k_int * self.err_int.T.reshape(-1)
+        n = float(self.error[self.label].shape[1])
+        self._u = self.gain * L_inv @ _error / n
+
+        #   Integration step
+        dt = self.tock - self.tick
+        self.tick = self.tock
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        self.err_int += dt * self.error[self.label]
+        self.get_logger().info(f"int = ({self.err_int})")
+
+
+        # BEGIN debug
+        # if self.label == 0:
+        #     self._u = np.zeros(6)
+        #     self.get_logger().info(str(self.error[self.label][:,mask]))
+
+            # END debug
+
+        # # # BEGIN DEBUG
+        # if self.label != 0:
+        #     self.u = np.zeros(6)
+        #     return
+        #
+        # if _n != 0:
+        #     self.get_logger().info(f"Neig:{_n}")
+        #     self._u /= _n
+        # self._u = np.zeros(6)
+        # # # END DEBUG
+        # 6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return
+
     def s_control(self):
+
+        # Control interemdiate state
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        self.tick = self.tock
+        self.err_int = np.zeros((2,self.points3D.shape[1]))
+
+        self.state = self.s_control_
+
+    def s_control_(self):
 
         if self.points is None:
             self.get_logger().error("Image error can not be computed")
@@ -492,7 +606,7 @@ class Controller( VirtualTracker):
             # else:
             #     _image = self.control_p(_image)
             # self.control()
-            self.control()
+            self.control_int()
 
             _norm = 0.
             for j in self.in_neighbors:

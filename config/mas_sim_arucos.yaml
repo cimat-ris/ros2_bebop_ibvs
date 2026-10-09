@@ -103,11 +103,20 @@ control: "mas_ibvs_direct_virtualP_sim"
 # gain: .1
 # gain: 1. # matcher
 gain: .5 # virtual
+# gain_integral: 0.
+gain_integral: 0.005
 # gain_w: 1.
 gain_w: 1.2
 img_depth: 2.3
 polar: false
 
+
+
+# --------------------------------------------------------
+#   LEADER
+# --------------------------------------------------------
+
+# leader: 0
 
 
 # --------------------------------------------------------
@@ -164,4 +173,5 @@ point_type: virtual
 
 vel_limits: [-0.2, 0.2]
 error_limits: [-1, 1]
+error_int_limits: [-5, 5]
 camera_angle: pi
