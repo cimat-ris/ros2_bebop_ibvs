@@ -961,11 +961,6 @@ class FeatureTracker(ImageProc):
             **self.lk_params)
         self.prev_image = gray_image.copy()
 
-
-
-
-
-
         if status is None or any ([self.p.shape[0] < self.detect_threshold,
                                     self.reset_tracking]):
             super().get_logger().info("Reseting tracking.")
@@ -987,29 +982,9 @@ class FeatureTracker(ImageProc):
             self.kp = _kp
             self.ids = _ids
             self.desc_self = self.desc_self[status == 1]
-        # else:
-        #     # print(f"{status.shape}, {self.p.shape} {len(self.kp)}")
-        #     # before = len(self.kp)
-        #     status = status.reshape(-1)
-        #     self.p = new_pts[status == 1]
-        #     _kp = []
-        #     for i,_k in enumerate(self.kp):
-        #         if status[i] == 1:
-        #             _kp.append(_k)
-        #     _kp
-        #     print(f" {self.p.shape} {len(_kp)}")
-        #     for i in range(self.p.shape[0]):
-        #         _kp[i].pt = self.p[i]
-        #     self.kp, self.desc_self = self.orb.compute(gray_image,
-        #                             _kp)
-        #     # print(f"{before} {len(self.kp)}")
-        #
-        # if len(self.kp) <4:
-        #     return
 
 
         #  Kp conversion
-        # self.p = np.float32([k.pt for k in kp  ])
         self.points = self.normalize(self.p.astype(float).T)
 
 

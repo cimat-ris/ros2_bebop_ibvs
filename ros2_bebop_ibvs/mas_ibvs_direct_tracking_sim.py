@@ -39,7 +39,6 @@ class Controller( FeatureTracker):
         self.cv_image = None
         self.m_image = None
         self.error = [None]*self.n_agents
-        self._err_int = [None]*self.n_agents
         self.norm = -1.
         self.lost_features = False
         self.desc = [None]*self.n_agents
@@ -64,11 +63,12 @@ class Controller( FeatureTracker):
 
             #   config control
             if self.k_int != 0:
+                self.control_ = self.control_int
                 self.ids_int = [[] for i in range(self.n_agents)]
                 self.err_int = [[] for i in range(self.n_agents)]
                 # self.err_int = [np.array([[],[]])]*self.n_agents
-                self.tick = -1.
-                self.tock = -1.
+            else:
+                self.control_ = self.control
 
             #   Config data storage
             self.config_data_storage()
@@ -130,7 +130,7 @@ class Controller( FeatureTracker):
         self.declare_parameter('output', "output")
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
-        self.declare_parameter('gain_int', 0.)
+        self.declare_parameter('gain_integral', 0.)
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
@@ -152,7 +152,7 @@ class Controller( FeatureTracker):
         self.img_depth = self.get_parameter('img_depth').value
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
-        self.k_int = self.get_parameter('gain_int').value
+        self.k_int = self.get_parameter('gain_integral').value
 
         self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
@@ -205,9 +205,9 @@ class Controller( FeatureTracker):
         self.reference_pose = self.reference_pose.reshape((-1,4))
 
         psi = self.reference_pose[self.label,3]
-        _R = np.array([[ np.sin(psi), -np.cos(psi),  0.],
-                       [-np.cos(psi), -np.sin(psi),  0.],
-                       [          0.,           0., -1.]])
+        _R = self.R_cam @ np.array([[np.cos(psi), -np.sin(psi), 0.],
+                                    [np.sin(psi),  np.cos(psi), 0.],
+                                    [         0.,           0., 1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
@@ -266,25 +266,23 @@ class Controller( FeatureTracker):
                 self.log_d[j] = os.path.join(self.output, f"log_{self.label}.dat")
                 with open(self.log_d[j], 'w') as file:
                     pass  # 'w' mode clears the file's contents
-        #     if self.k_int != 0.:
-        #         self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
-        #         with open(self.vel_log_d_0, 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
-        #         self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
-        #         with open(self.vel_log_d_1, 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
-        #
-        # if self.k_int != 0.:
-        #     self.error_int_d = [None]*self.n_agents
-        #     for j in self.in_neighbors:
-        #         self.error_int_d[j] = os.path.join(self.output, f"error_int_{self.label}_{j}.dat")
-        #         with open(self.error_int_d[j], 'w') as file:
-        #             pass  # 'w' mode clears the file's contents
+            if self.k_int != 0.:
+                self.vel_log_d_0 = os.path.join(self.output, f"log_vel_prop_{self.label}.dat")
+                with open(self.vel_log_d_0, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+                self.vel_log_d_1 = os.path.join(self.output, f"log_vel_int_{self.label}.dat")
+                with open(self.vel_log_d_1, 'w') as file:
+                    pass  # 'w' mode clears the file's contents
+
+        if self.k_int != 0.:
+            self.error_int_d = os.path.join(self.output, f"error_int_{self.label}.dat")
+            with open(self.error_int_d, 'w') as file:
+                pass  # 'w' mode clears the file's contents
 
 
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
-            self.reset_tracking = True
+            self.state = self.control
             return
         self.new_state = msg.data
 
@@ -313,36 +311,7 @@ class Controller( FeatureTracker):
 
         self.img_proc(self.cv_image)
 
-
-    def save_data(self):
-
-        t = self.get_clock().now().nanoseconds * 1e-9
-        orientation_q = self.current_pose.orientation
-        ang = get_yaw(orientation_q)
-        with open(self.position_d, 'ab') as f:
-            data = (t, self.current_pose.position.x,
-                    self.current_pose.position.y,
-                    self.current_pose.position.z,
-                    ang)
-            binary = struct.pack('ddddd', *data)
-            f.write(binary)
-
-        with open(self.vel_d, 'ab') as f:
-            data = (t,) + tuple(self.u[[0,1,2,5]].reshape(-1))
-            # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
-            # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
-            binary = struct.pack('ddddd', *data)
-            f.write(binary)
-
-        if self.norm >= .0:
-            with open(self.norm_e_d, 'ab') as f:
-                data = (t,self.norm)
-                binary = struct.pack('dd', *data)
-                f.write(binary)
-
-        if self.deltas is None:
-            return
-
+    def save_features(self,t):
         with open(self.features_d, 'ab') as f:
             for i, m in enumerate(self.ids):
 
@@ -371,7 +340,50 @@ class Controller( FeatureTracker):
                     data += tuple(self.error[self.label][:,i].T.reshape(-1))
                     binary = struct.pack('didd', *data)
                     f.write(binary)
-        #
+
+    def save_integral(self,t):
+        if self.err_int is None:
+            return
+        with open(self.error_int_d, 'ab') as f:
+            for i, m in enumerate( self.ids):
+
+                data = (t, m)
+                data += tuple(self.err_int[:,i].T.reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
+    def save_data(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        orientation_q = self.current_pose.orientation
+        ang = get_yaw(orientation_q)
+        with open(self.position_d, 'ab') as f:
+            data = (t, self.current_pose.position.x,
+                    self.current_pose.position.y,
+                    self.current_pose.position.z,
+                    ang)
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        with open(self.vel_d, 'ab') as f:
+            data = (t,) + tuple(self.u[[0,1,2,5]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,3]].reshape(-1))
+            # data = (t,) + tuple(self.u[[0,1,2,2]].reshape(-1))
+            binary = struct.pack('ddddd', *data)
+            f.write(binary)
+
+        if self.norm >= .0:
+            with open(self.norm_e_d, 'ab') as f:
+                data = (t,self.norm)
+                binary = struct.pack('dd', *data)
+                f.write(binary)
+
+        if not self.deltas is None:
+            self.save_features(t)
+
+
+        if self.k_int != 0:
+            self.save_integral(t)
 
 
     def delta_receiver(self, msg):
@@ -423,113 +435,106 @@ class Controller( FeatureTracker):
         if len(self.p) > 2:
             self.custom_draw(self.m_image, self.p.T)
 
+    # def control(self):
+    #     _n = 0.
+    #     self._u = np.zeros(6)
+    #     # self._u = np.zeros(4)
+    #     mismatch = len(self.in_neighbors)
+    #     for j in self.in_neighbors:
+    #         if self.deltas[j] is None:
+    #             continue
+    #
+    #         _ret = self.match(self.desc[j], self.deltas[j])
+    #         if _ret is None:
+    #             mismatch -= 1
+    #             self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
+    #             continue
+    #
+    #         _delta_i, _delta_j, idx = _ret
+    #         complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
+    #         self.error[j] = complement - _delta_i
+    #         # self.error[j] = _delta_j - _delta_i - .1*self.pref[j,:2].reshape((2,1))
+    #         # self.L = interaction_matrix_z(_delta_i, self.img_depth)
+    #         self.L = interaction_matrix_xyz(_delta_i, self.img_depth)
+    #         # self.L = interaction_matrix_xyz(complement, self.img_depth)
+    #         # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+    #         # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+    #
+    #         self.ids_save[j] = [self.ids[k] for k in idx]
+    #
+    #         #   BEGIN TEST
+    #         # self.error[j] = _delta_i
+    #         # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
+    #         # self.error[j] = _delta_i
+    #         # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
+    #         # self.error[j] = self.deltas_self
+    #         # self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
+    #         #   END TEST
+    #
+    #         L_inv = Inv_Moore_Penrose(self.L)
+    #
+    #         if self.enable_log:
+    #             _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+    #
+    #         if L_inv is None:
+    #             self.get_logger().error("Invalid Ls matrix")
+    #             continue
+    #
+    #         self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
+    #         _n += 1.
+    #
+    #         # if self.label == 0:
+    #         #     self.get_logger().info(str(self.error[j]))
+    #
+    #         if self.m_image is None:
+    #             continue
+    #
+    #         self.custom_draw_matching(self.m_image,
+    #                     # m_delta_i.T,
+    #                     # complement.T,
+    #                     _delta_i,
+    #                     complement,
+    #                     color2 = (0,124,int(255*j / self.n_agents)),
+    #                     reproject = True)
+    #
+    #     if mismatch == 0:
+    #         self.reset_tracking = True
+    #         self.u = np.zeros(6)
+    #         return
+    #
+    #     # # BEGIN DEBUG
+    #     # if self.label != 0:
+    #     #     self.u = np.zeros(6)
+    #     #     return
+    #
+    #     # if _n != 0:
+    #     #     self.get_logger().info(f"Neig:{_n}")
+    #     #     self._u /= _n
+    #     # self._u = np.zeros(6)
+    #     # # END DEBUG
+    #     #   6DOF
+    #     _w = self.R_cam @ self._u[3:]
+    #     _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     _v += np.cross( self.t_cam , _w.reshape(-1) )
+    #     _w *= self.kw
+    #     self.u[:3] = _v.copy()
+    #     self.u[3:] = _w.reshape(-1)
+    #     self.get_logger().info(str(self.u))
+    #     #   4DOF
+    #     # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+    #     # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
+    #     # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     # _v += np.cross( self.t_cam , _w.reshape(-1) )
+    #     # _w *= self.kw
+    #     # self.u[:3] = _v.copy()
+    #     # self.u[3:] = _w.copy()
+    #
+    #     return
+
     def control(self):
-        _n = 0.
-        self._u = np.zeros(6)
-        # self._u = np.zeros(4)
-        mismatch = len(self.in_neighbors)
-        for j in self.in_neighbors:
-            if self.deltas[j] is None:
-                continue
-
-            _ret = self.match(self.desc[j], self.deltas[j])
-            if _ret is None:
-                mismatch -= 1
-                self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}-{j})")
-                continue
-
-            _delta_i, _delta_j, idx = _ret
-            complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
-            self.error[j] = complement - _delta_i
-            # self.error[j] = _delta_j - _delta_i - .1*self.pref[j,:2].reshape((2,1))
-            # self.L = interaction_matrix_z(_delta_i, self.img_depth)
-            self.L = interaction_matrix_xyz(_delta_i, self.img_depth)
-            # self.L = interaction_matrix_xyz(complement, self.img_depth)
-            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
-            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
-
-            self.ids_save[j] = [self.ids[k] for k in idx]
-
-            #   BEGIN TEST
-            # self.error[j] = _delta_i
-            # self.L = interaction_matrix_xyz(_pr_i, self.img_depth)
-            # self.error[j] = _delta_i
-            # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
-            # self.error[j] = self.deltas_self
-            # self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
-            #   END TEST
-
-            L_inv = Inv_Moore_Penrose(self.L)
-
-            if self.enable_log:
-                _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
-
-            if L_inv is None:
-                self.get_logger().error("Invalid Ls matrix")
-                continue
-
-            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
-            _n += 1.
-
-            # if self.label == 0:
-            #     self.get_logger().info(str(self.error[j]))
-
-            if self.m_image is None:
-                continue
-
-            self.custom_draw_matching(self.m_image,
-                        # m_delta_i.T,
-                        # complement.T,
-                        _delta_i,
-                        complement,
-                        color2 = (0,124,int(255*j / self.n_agents)),
-                        reproject = True)
-
-        if mismatch == 0:
-            self.reset_tracking = True
-            self.u = np.zeros(6)
-            return
-
-        # # BEGIN DEBUG
-        # if self.label != 0:
-        #     self.u = np.zeros(6)
-        #     return
-
-        # if _n != 0:
-        #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
-        # # END DEBUG
-        #   6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
-        _v += np.cross( self.t_cam , _w.reshape(-1) )
-        _w *= self.kw
-        self.u[:3] = _v.copy()
-        self.u[3:] = _w.reshape(-1)
-        self.get_logger().info(str(self.u))
-        #   4DOF
-        # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
-        # _v += np.cross( self.t_cam , _w.reshape(-1) )
-        # _w *= self.kw
-        # self.u[:3] = _v.copy()
-        # self.u[3:] = _w.copy()
-
-        return
-
-    def control2(self):
         _n = 0.
         self.error[self.label] = np.zeros(self.points.shape)
         mismatch = len(self.in_neighbors)
-        # self.L = interaction_matrix_xyz(self.points, self.img_depth)
-        # L_inv = Inv_Moore_Penrose(self.L)
-        # if L_inv is None:
-        #     self.get_logger().error("Invalid Ls matrix")
-        #     self._u = np.zeros(6)
-        #     self.u = np.zeros(6)
-        #     return
 
         if self.enable_log:
             _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
@@ -632,22 +637,159 @@ class Controller( FeatureTracker):
 
         return
 
+    def control_int(self):
+        _n = 0.
+        self.error[self.label] = np.zeros(self.points.shape)
+        mismatch = len(self.in_neighbors)
+        # self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        # L_inv = Inv_Moore_Penrose(self.L)
+        # if L_inv is None:
+        #     self.get_logger().error("Invalid Ls matrix")
+        #     self._u = np.zeros(6)
+        #     self.u = np.zeros(6)
+        #     return
+
+        if self.enable_log:
+            _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+
+        for j in self.in_neighbors:
+            if self.deltas[j] is None:
+                continue
+
+            _ret = self.match(self.desc[j], self.deltas[j])
+            if _ret is None:
+                mismatch -= 1
+                self.get_logger().warning(f"Not enough matchings in neighbors ({self.label}<-{j})")
+                continue
+
+            _delta_i, _delta_j, idx = _ret
+            complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
+            self.error[j] = complement - _delta_i
+            self.error[self.label][:,idx] += self.error[j]
+            self.ids_save[j] = [self.ids[k] for k in idx]
+
+            # # BEGIN debug
+            # if self.label == 0:
+            #     # self.get_logger().info(str(self.error[j]))
+            #     # self.get_logger().info(str(idx))
+            #     self.get_logger().info(str(self.error[self.label]))
+            #
+            # # END debug
+
+            _n += 1.
+
+            # TODO image draw
+            if self.m_image is None:
+                continue
+            # self.get_logger().info(str(complement))
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        # complement,
+                        _delta_j,
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        _delta_i+self.pref[j,:2].reshape((2,1)),
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
+
+        if mismatch == 0:
+            self.reset_tracking = True
+            self._u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+
+        mask = np.logical_or(self.error[self.label][0,:] !=0.,
+                             self.error[self.label][1,:] !=0.)
+
+        # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        L_inv = Inv_Moore_Penrose(self.L)
+        if L_inv is None:
+            self.get_logger().error("Invalid Ls matrix")
+            self._u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+
+        #   Integral filter to index
+        filt = [a in self.ids for a in self.ids_int]
+        self.err_int = self.err_int[:,filt]
+        self.ids_int = [i for i in self.ids]
+
+        #   Control
+        _arg  =  self.error[self.label].T.reshape(-1)
+        _arg +=  self.k_int * self.err_int.T.reshape(-1)
+        _arg /= float(mask.sum())
+        self._u = self.gain * L_inv @ _arg
+
+        #   Integration step
+        dt = self.tock - self.tick
+        self.tick = self.tock
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        self.err_int += dt * self.error[self.label]
+
+
+        # BEGIN debug
+        # if self.label == 0:
+        #     self._u = np.zeros(6)
+        #     self.get_logger().info(str(self.error[self.label][:,mask]))
+
+            # END debug
+
+        # # # BEGIN DEBUG
+        # if self.label != 0:
+        #     self.u = np.zeros(6)
+        #     return
+        #
+        # if _n != 0:
+        #     self.get_logger().info(f"Neig:{_n}")
+        #     self._u /= _n
+        # self._u = np.zeros(6)
+        # # # END DEBUG
+        # 6DOF
+        _w = self.R_cam @ self._u[3:]
+        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _v += np.cross( self.t_cam , _w.reshape(-1) )
+        _w *= self.kw
+        self.u[:3] = _v.copy()
+        self.u[3:] = _w.reshape(-1)
+        #   4DOF
+        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
+        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _v += np.cross( self.t_cam , _w.reshape(-1) )
+        # _w *= self.kw
+        # self.u[:3] = _v.copy()
+        # self.u[3:] = _w.copy()
+
+        return
+
     def s_control(self):
+
+        self.reset_tracking = True
+        self.img_proc(self.cv_image)
+
+        # Control interemdiate state
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        self.tick = self.tock
+
+        self.ids_int = [i for i in range(self.p.shape[0])]
+        self.err_int = np.zeros(self.points.shape)
+
+        self.state = self.s_control_
+
+    def s_control_(self):
 
         if self.points is None:
             self.get_logger().error("Image error can not be computed")
             if self.data2save:
                 self.save_data()
         else:
-            #   IBFC
-            # self._u = np.zeros(6)
-            # if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
-            #     _image = self.control_int(_image)
-            #
-            # else:
-            #     _image = self.control_p(_image)
-            # self.control()
-            self.control2()
+            self.control_()
 
             _norm = 0.
             for j in self.in_neighbors:
