@@ -71,6 +71,7 @@ class Ploter():
             self.error_limits = _dict['error_limits']
         else:
             self.error_limits = [-1., 1.]
+
         if 'error_int_limits' in _dict:
             self.error_int_limits = _dict['error_int_limits']
         else:
@@ -244,7 +245,7 @@ class Ploter():
                     t0 = min(t0)
                     for i in features:
                         features[i]["v"] = features[i]["v"].reshape((-1,self.point_count))
-                        features[i]["v"] = features[i]["v"].T
+                        # features[i]["v"] = features[i]["v"].T
                         features[i]["t"] = [t - t0 for t in features[i]["t"]]
                 self.features = features
 
@@ -526,11 +527,13 @@ class Ploter():
 
         if not i is None:
             print(f"\tPloting Agent {i}")
+        else:
+            i = 0
 
         if not self.n_e is None:
             print("Ploting Error Norm")
             # plotNErr(self.directory, n_e, f"Error{sufx}.pdf")
-            plotError(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.1)
+            plotTime(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.1)
         if not self.velocities is None:
             print("Ploting Velocities ")
             plotVel(self.directory, self.velocities,
@@ -547,32 +550,37 @@ class Ploter():
 
         if not self.features is None:
             print("Ploting Features")
-            plotFeat(self.directory,  self.features, f"Features{sufx}.pdf")
+            plotFeat(self.directory,  self.features,
+                     f"Features{sufx}.pdf")
+            plotTime(self.directory,  self.features,
+                     f"Time_features{sufx}.pdf",
+                     title = "Features")
+
 
         if not self.error[i][i] is None:
             print("Ploting Error")
-            plotError(self.directory,
+            plotTime(self.directory,
                       self.error[i][i],
                       f"Error_feature{sufx}.pdf",
                       lims = self.error_limits)
             for j in range(self.n_agents):
                 if j != i and not self.error[i][j] is None:
                     # print(self.error[i][j])
-                    plotError(self.directory,
+                    plotTime(self.directory,
                             self.error[i][j],
                             f"Error_feature{sufx}_{j}.pdf",
                             lims = self.error_limits)
 
         if not self.error_int[i][i] is None:
             print("Ploting Integral Error")
-            plotError(self.directory,
+            plotTime(self.directory,
                       self.error_int[i][i],
                       f"Error_integral{sufx}.pdf",
                       lims = self.error_int_limits)
             for j in range(self.n_agents):
                 if j != i and not self.error_int[i][j] is None:
                     # print(self.error_int[i][j])
-                    plotError(self.directory,
+                    plotTime(self.directory,
                             self.error_int[i][j],
                             f"Error_integral{sufx}_{j}.pdf",
                             lims = self.error_int_limits)
@@ -659,6 +667,7 @@ class Ploter():
     def proc_joined(self):
 
         if any([not x is None for x in self.arucos]):
+            # this is possioble only with arucos or virtual
             self.join_error()
 
         self.get_formation_error()
@@ -667,14 +676,14 @@ class Ploter():
 
         if not self.joined_error is None:
             print("Ploting Joined Error")
-            plotError(self.directory, self.joined_error, f"Error_joined.pdf")
+            plotTime(self.directory, self.joined_error, f"Error_joined.pdf")
 
         name = os.path.join(self.directory,'Error_final.pdf')
         self.plot_error_state( name = name)
         # formation_error = self.get_formation_error(name)
         if not self.formation_error is None:
             print("Ploting Joined Error")
-            plotError(self.directory, self.formation_error, f"Formation_error.pdf", th = 0.0)
+            plotTime(self.directory, self.formation_error, f"Formation_error.pdf", th = 0.0)
 
         if not any([( i is None) for i in self.position]):
             print("Ploting 3D")
@@ -990,21 +999,26 @@ def plotVel(directory, data, name, lims = [-1.1,1.1]):
 #     plt.savefig(name,bbox_inches='tight')
 #     plt.close()
 
-def plotError(directory, error, name, th = 0., lims = None):
+def plotTime(directory,
+              data,
+              name,
+              th = 0.,
+              title = "Error",
+              lims = None):
 
     fig, ax = plt.subplots( figsize=(6,2))
-    fig.suptitle("Error")
+    fig.suptitle(title)
 
-    if "t" in error :
-        time = np.array(error["t"])
-        _error = np.array(error["v"].T).copy()
+    if "t" in data :
+        time = np.array(data["t"])
+        _error = np.array(data["v"].T).copy()
         plot_time(ax, time, _error, th)
     else:
         offset = 0
-        for k in error:
+        for k in data:
             # print(_dict)
-            time = np.array(error[k]["t"])
-            _error = np.array(error[k]["v"].T).copy()
+            time = np.array(data[k]["t"])
+            _error = np.array(data[k]["v"].T).copy()
             plot_time(ax,
                         time,_error,
                         th, color_offset = offset )
@@ -1028,7 +1042,7 @@ def plotFeat(directory, features, name): #, reference):
             # s_ref = reference[1][k].reshape(8)
         # points = np.array(v["v"]).reshape((2,-1))
         symbols = plot_descriptors_simple(ax,
-                            np.array(v["v"]),
+                            np.array(v["v"].T),
                             # s_ref,
                         camera_iMsize,
                         enableLims = True)
@@ -1178,13 +1192,13 @@ def main(arg):
 
 if __name__ ==  "__main__":
     description = "Plotting multiple agent experiment data"
-    parser = argparse.ArgumentParser(prog = 'python3 plot_mav_desc.py',
+    parser = argparse.ArgumentParser(prog = 'python3 plot_mas_desc.py',
                                      description = description)
     parser.add_argument( 'directory', type=str, default = 'output',
         help = "Directory name (default output/)")
     parser.add_argument( '--config', type=str,
-        default = 'config/mav_sim.yaml',
-        help = "File containign the configurations (defaultconfig/mav_sim.yaml)")
+        default = 'config/mas_sim.yaml',
+        help = "File containign the configurations (defaultconfig/mas_sim.yaml)")
 
     arg = parser.parse_args()
     main(arg)
