@@ -151,54 +151,7 @@
       </link>
       <pose>0 0 0 0 -0 0</pose>
     </model>
-    <model name='grey_wall'>
-      <static>1</static>
-      <link name='link'>
-        <pose>0 0 1.4 0 -0 0</pose>
-        <collision name='collision'>
-          <geometry>
-            <box>
-              <size>7.5 0.2 2.8</size>
-            </box>
-          </geometry>
-          <max_contacts>10</max_contacts>
-          <surface>
-            <contact>
-              <ode/>
-            </contact>
-            <bounce/>
-            <friction>
-              <torsional>
-                <ode/>
-              </torsional>
-              <ode/>
-            </friction>
-          </surface>
-        </collision>
-        <visual name='visual'>
-          <cast_shadows>0</cast_shadows>
-          <geometry>
-            <box>
-              <size>7.5 0.2 2.8</size>
-            </box>
-          </geometry>
-          <material>
-            <ambient>0.8 0.8 0.8 1</ambient>
-            <diffuse>0.8 0.8 0.8 1</diffuse>
-            <specular>0.5 0.5 0.5 1</specular>
-            <pbr>
-            <metal>
-              <albedo_map>model://grey_wall/grey_wall.png</albedo_map>
-            </metal>
-          </pbr>
-          </material>
-        </visual>
-        <self_collide>0</self_collide>
-        <enable_wind>0</enable_wind>
-        <kinematic>0</kinematic>
-      </link>
-      <pose>1 5 0 0 -0 0</pose>
-    </model>
+
 
     <state world_name='default'>
       <sim_time>498 988000000</sim_time>
@@ -207,136 +160,9 @@
       <iterations>498988</iterations>
     </state>
 
-    <model name="ArUco_1">
+      <model name="ArUco_0">
     <static>true</static>
-    <pose> 0 0 0.14 0 0 0 </pose>
-    <link name="link">
-      <collision name="collision">
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>100</mu>
-              <mu2>50</mu2>
-            </ode>
-          </friction>
-        </surface>
-      </collision>
-      <visual name="visual">
-        <cast_shadows>false</cast_shadows>
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <material>
-          <ambient>0.8 0.8 0.8 1</ambient>
-          <diffuse>0.8 0.8 0.8 1</diffuse>
-          <specular>0.5 0.5 0.5 1</specular>
-          <pbr>
-          <metal>
-            <albedo_map>model://ArUco/4X4_1000-96.png</albedo_map>
-          </metal>
-        </pbr>
-        </material>
-      </visual>
-    </link>
-  </model>
-
-
-  <model name="ArUco_2">
-    <static>true</static>
-    <pose> 1 1 0.14 0 0 -0.1</pose>
-    <link name="link">
-      <collision name="collision">
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>100</mu>
-              <mu2>50</mu2>
-            </ode>
-          </friction>
-        </surface>
-      </collision>
-      <visual name="visual">
-        <cast_shadows>false</cast_shadows>
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <material>
-          <ambient>0.8 0.8 0.8 1</ambient>
-          <diffuse>0.8 0.8 0.8 1</diffuse>
-          <specular>0.5 0.5 0.5 1</specular>
-          <pbr>
-          <metal>
-            <albedo_map>model://ArUco/4X4_1000-97.png</albedo_map>
-          </metal>
-        </pbr>
-        </material>
-      </visual>
-    </link>
-  </model>
-
-  <model name="ArUco_3">
-    <static>true</static>
-    <pose> 1 -1 0.14 0 0 0.1 </pose>
-    <link name="link">
-      <collision name="collision">
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>100</mu>
-              <mu2>50</mu2>
-            </ode>
-          </friction>
-        </surface>
-      </collision>
-      <visual name="visual">
-        <cast_shadows>false</cast_shadows>
-        <geometry>
-          <plane>
-            <normal>0 0 1</normal>
-            <size>0.5 0.5</size>
-          </plane>
-        </geometry>
-        <material>
-          <ambient>0.9 0.9 0.9 1</ambient>
-          <diffuse>0.9 0.9 0.9 1</diffuse>
-          <specular>0.5 0.5 0.5 1</specular>
-          <pbr>
-          <metal>
-            <albedo_map>model://ArUco/4X4_1000-98.png</albedo_map>
-          </metal>
-        </pbr>
-        </material>
-      </visual>
-    </link>
-  </model>
-
-  <model name="ArUco_4">
-    <static>true</static>
-    <pose> -1 1 0.14 0 0 0.2 </pose>
+    <pose> 2.13 -0.957 0.11 0 0 -0.0317 </pose>
     <link name="link">
       <collision name="collision">
         <geometry>
@@ -368,13 +194,832 @@
           <specular>0.5 0.5 0.5 1</specular>
           <pbr>
           <metal>
-            <albedo_map>model://ArUco/4X4_1000-99.png</albedo_map>
+           <albedo_map>model://ArUco/4X4_1000-0.png</albedo_map>
           </metal>
         </pbr>
         </material>
       </visual>
     </link>
   </model>
+
+
+  <model name="ArUco_1">
+    <static>true</static>
+    <pose> 0.565 -0.94 0.11 0 0 -0.102 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-1.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_2">
+    <static>true</static>
+    <pose> 3.3 3.62 0.11 0 0 0.00088 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-2.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_3">
+    <static>true</static>
+    <pose> 1.59 3.35 0.11 0 0 0.191 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-3.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_4">
+    <static>true</static>
+    <pose> -0.376 -0.884 0.11 0 0 -0.138 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-4.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_5">
+    <static>true</static>
+    <pose> 0.686 1.99 0.11 0 0 0.105 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-5.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_6">
+    <static>true</static>
+    <pose> 1.51 1.88 0.11 0 0 0.0995 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-6.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_7">
+    <static>true</static>
+    <pose> 3.32 2.67 0.11 0 0 0.0604 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-7.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_8">
+    <static>true</static>
+    <pose> 1.17 -0.0484 0.11 0 0 0.174 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-8.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_9">
+    <static>true</static>
+    <pose> -0.0121 3.44 0.11 0 0 0.0876 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-9.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_10">
+    <static>true</static>
+    <pose> 2.86 1.93 0.11 0 0 0.0593 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-10.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_11">
+    <static>true</static>
+    <pose> 3.07 0.64 0.11 0 0 0.147 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-11.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_12">
+    <static>true</static>
+    <pose> -0.669 0.947 0.11 0 0 -0.131 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-12.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_13">
+    <static>true</static>
+    <pose> -0.199 1.79 0.11 0 0 -0.142 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-13.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_14">
+    <static>true</static>
+    <pose> -0.492 0.0981 0.11 0 0 -0.107 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-14.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_15">
+    <static>true</static>
+    <pose> -1.205 1.94 0.11 0 0 0.0483 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-15.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_16">
+    <static>true</static>
+    <pose> -0.416 2.83 0.11 0 0 -0.0588 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-16.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_17">
+    <static>true</static>
+    <pose> 3.53 1.82 0.11 0 0 0.092 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-17.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_18">
+    <static>true</static>
+    <pose> 2.41 -0.0208 0.11 0 0 -0.0151 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-18.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
+  <model name="ArUco_19">
+    <static>true</static>
+    <pose> 2.16 2.04 0.11 0 0 -0.09 </pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+        <plane>
+          <normal>0 0 1</normal>
+          <size>0.5 0.5</size>
+        </plane>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>100</mu>
+              <mu2>50</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.5 0.5</size>
+          </plane>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+          <pbr>
+          <metal>
+           <albedo_map>model://ArUco/4X4_1000-19.png</albedo_map>
+          </metal>
+        </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+
 
 
     <!--<gui fullscreen='0'>
