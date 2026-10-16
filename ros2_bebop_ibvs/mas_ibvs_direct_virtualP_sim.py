@@ -21,6 +21,7 @@ import yaml
 
 #   Custom
 from .my_classes import *
+from .leaders import lead
 
 
 
@@ -34,7 +35,7 @@ class Controller( VirtualTracker):
 
         #   State
         self.u = np.zeros(6)
-        self._u = np.zeros(6)
+        _u = np.zeros(6)
         self.data2save = False
         self.cv_image = None
         self.m_image = None
@@ -56,15 +57,19 @@ class Controller( VirtualTracker):
         qos = QoSProfile(depth=2)
         self.create_publishers(qos)
 
-
         if enable_IBVS:
 
             #   config control
-            if self.k_int != 0.:
-                self.err_int = np.zeros((2,self.points3D.shape[1]))
-                # self.err_int = [np.array([[],[]])]*self.n_agents
-                self.tock = self.get_clock().now().nanoseconds * 1e-9
-                self.tick = self.tock
+            if self.leader:
+                self.control_ = self.leader_f
+            elif self.k_int != 0.:
+                self.control_ = self.control_int
+                # self.err_int = np.zeros((2,self.points3D.shape[1]))
+                # # self.err_int = [np.array([[],[]])]*self.n_agents
+                # self.tock = self.get_clock().now().nanoseconds * 1e-9
+                # self.tick = self.tock
+            else:
+                self.control_ = self.control
 
             #   Config data storage
             self.config_data_storage()
@@ -122,12 +127,14 @@ class Controller( VirtualTracker):
         self.declare_parameter('gain', 1.)
         self.declare_parameter('gain_integral', 0.)
         self.declare_parameter('gain_w', 1.)
+        self.declare_parameter('leader', False)
 
         self.declare_parameter('L', [0])
         self.declare_parameter('p0', [1.]*4)
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
+        self.declare_parameter('tanh', False)
 
         #   Config tracker
 
@@ -143,6 +150,8 @@ class Controller( VirtualTracker):
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_integral').value
+        self.leader = self.get_parameter('leader').value
+        self.enable_tanh = self.get_parameter('tanh').value
 
         self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
@@ -168,7 +177,7 @@ class Controller( VirtualTracker):
             "kw" : self.kw,
             "k_int" : self.k_int,
             "gain_takeoff" : self.gain_takeoff,
-            "K" : self.K,
+            "K" : self.K.ravel().tolist(),
             "L" : self.L,
             "initial_cond" : self.initial_cond,
             "reperence_pose" : self.reference_pose,
@@ -295,12 +304,7 @@ class Controller( VirtualTracker):
 
         self.project(self.cv_image)
 
-    def save_features(self, t):
-        with open(self.features_d, 'ab') as f:
-            data = (t, 0)
-            data += tuple(self.p.reshape(-1))
-            binary = struct.pack(self.s_format, *data)
-            f.write(binary)
+    def save_error(self, t):
 
         for j in self.in_neighbors:
             if self.error[j] is None:
@@ -354,8 +358,14 @@ class Controller( VirtualTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
+        with open(self.features_d, 'ab') as f:
+            data = (t, 0)
+            data += tuple(self.p.reshape(-1))
+            binary = struct.pack(self.s_format, *data)
+            f.write(binary)
+
         if not self.deltas is None:
-            self.save_features(t)
+            self.save_error(t)
 
         if self.k_int != 0:
             self.save_integral(t)
@@ -398,6 +408,11 @@ class Controller( VirtualTracker):
         if self.p is None:
             return
         self.custom_draw(self.m_image, self.p.T)
+
+    def leader_f(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        self.u = lead[self.label](t)
 
     def control(self):
 
@@ -444,14 +459,17 @@ class Controller( VirtualTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
-        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1) / float(self.error[self.label].shape[1])
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1) / float(self.error[self.label].shape[1])
+
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -463,20 +481,20 @@ class Controller( VirtualTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -530,26 +548,28 @@ class Controller( VirtualTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
         _error  = self.error[self.label].T.reshape(-1)
         _error += self.k_int * self.err_int.T.reshape(-1)
-        n = float(self.error[self.label].shape[1])
-        self._u = self.gain * L_inv @ _error / n
+        _error /= float(self.error[self.label].shape[1])
+        _u =  self.gain * L_inv @ _error
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
         dt = self.tock - self.tick
         self.tick = self.tock
         self.tock = self.get_clock().now().nanoseconds * 1e-9
+        # self.err_int *= 0.8    #   Filter
         self.err_int += dt * self.error[self.label]
-        self.get_logger().info(f"int = ({self.err_int})")
 
 
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -561,20 +581,20 @@ class Controller( VirtualTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -589,6 +609,7 @@ class Controller( VirtualTracker):
         self.tick = self.tock
         self.err_int = np.zeros((2,self.points3D.shape[1]))
 
+        self.t0 = self.get_clock().now().nanoseconds * 1e-9
         self.state = self.s_control_
 
     def s_control_(self):
@@ -598,15 +619,7 @@ class Controller( VirtualTracker):
             if self.data2save:
                 self.save_data()
         else:
-            #   IBFC
-            # self._u = np.zeros(6)
-            # if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
-            #     _image = self.control_int(_image)
-            #
-            # else:
-            #     _image = self.control_p(_image)
-            # self.control()
-            self.control_int()
+            self.control_()
 
             _norm = 0.
             for j in self.in_neighbors:
@@ -618,7 +631,6 @@ class Controller( VirtualTracker):
             self.data2save = True
             self.save_data()
 
-        # self.u = np.zeros(6)
         super().s_control()
 
 

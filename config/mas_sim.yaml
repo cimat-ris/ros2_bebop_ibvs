@@ -11,25 +11,58 @@ CamT: [0., 0., -0.05]
 
 #   Conditions
 n_agents: 4
-pd: [0., -1.,2., 0,
-     1., -1.,2., 0,
-     0.,  1.,2., 0,
-     1.,  1.,2., 0]
-# p0: [-0.5, -1.,2., 0,
-#      1., -1.,2., 0,
-#      0.,  1.,2., 0,
-#      1.,  1.,2., 0]
+pd: [0., -1.,3., 0,
+     1., -1.,3., 0,
+     0.,  1.,3., 0,
+     1.,  1.,3., 0]
 
-# Results 25-sept
-p0: [-0.5, -0.8,2.5, 0,
-     1., -1.,2., 0,
-     -0.2,  1.,3., 0,
-     1.,  1.2,2., 0]
-L: [0, 1, 1, 0,
-    1, 0, 0, 1,
-    1, 0, 0, 1,
-    0, 1, 1, 0]
 
+
+# # arucos2_01
+# p0: [ 0.2, -1., 2.5,    0,
+#       0.8, -0.8, 2.3, 0.1,
+#       0.1, 0.8, 2.3, -0.2,
+#       0.8,  0.8,  2.5,    0]
+#
+# L: [0, 1, 1, 0,
+#     1, 0, 0, 1,
+#     1, 0, 0, 1,
+#     0, 1, 1, 0]
+# # arucos2_01
+# p0: [ 0.3, -1.1, 2.5,    0.1,
+#       0.8, -0.8, 2.3, 0.3,
+#       0.1, 0.8, 2.3, -0.2,
+#       0.8,  1.1,  2.5,    0]
+#
+# L: [0, 1, 1, 0,
+#     1, 0, 0, 1,
+#     1, 0, 0, 1,
+#     0, 1, 1, 0]
+# # pvirtual_01
+# p0: [ 0.3, -1.1, 2.5,    0.1,
+#       0.8, -0.8, 2.3, 0.3,
+#       0.1, 0.8, 2.3, -0.2,
+#       0.8,  1.1,  2.5,    0]
+#
+# L: [0, 1, 1, 0,
+#     1, 0, 0, 1,
+#     1, 0, 0, 1,
+#     0, 1, 1, 0]
+# pvirtual_01
+p0: [ 0.3, -1.1, 2.5,    0.1,
+      0.8, -0.8, 2.3, 0.3,
+      0.1, 0.8, 2.3, -0.2,
+      0.8,  1.1,  2.5,    0]
+
+L: [0, 1, 1, 1,
+    1, 0, 1, 1,
+    1, 1, 0, 1,
+    1, 1, 1, 0]
+#
+# L: [0, 1, 1, 0,
+#     1, 0, 0, 1,
+#     1, 0, 0, 1,
+#     0, 1, 1, 0]
 
 # Simulation
 frequency: 30.
@@ -37,21 +70,71 @@ save_log: false
 output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
 
 #   Control
-control: "mas_ibvs_direct_tracking_sim"
+# control: "mas_ibvs_direct_virtualP_sim"
+control: "mas_ibvs_direct_arucos_sim"
+# control: "mas_ibvs_direct_tracking_sim"
 # control: "mas_ibvs_direct_matching_sim"
-gain: .08
-gain_w: 1.
-img_depth: 2.
-polar: false
 
+# u = K @ gain * L^+ (e + gain_integral * e_int)
+# K =  diag(1,1,1,gain_w, gain_w, gain_w)
+
+# gain: 4. # virtual
+# gain_w: 1.5 # virtual
+
+gain: 4. # arucos
+gain_w: 1.5 # arucos
+
+# gain: 2. # matcher
+# gain_w: 1.5 # matcher
+
+
+# gain_integral: 0.
+gain_integral: 0.005
+# gain_integral: 0.001
+# gain_integral: 0.002
+# gain_integral: 0.0005
+
+
+#
+
+img_depth: 2.3
+polar: false
+tanh: true  #   soft inicialization
+
+
+# --------------------------------------------------------
+#   LEADER
+# leaders run their openloop control function defined in leaders.py
+# --------------------------------------------------------
+leader: [0]
 
 
 # --------------------------------------------------------
 #   Image Proc
 # --------------------------------------------------------
 
+#    Virtual points
+# world: "ground.world"
+points3D: [0.,0.,0.,
+           1.,0.,0.,
+           1.,1.,0.,
+           0.,1.,0.,
+
+           2.,0.5,0.,
+           -0.3,0.5,0.,
+           1.8,1.8,0.,
+           2.1,1.3,0.,
+           0.,0.3,0.,
+           2.5,1.,0.,
+           -0.5,0.2,0.,
+           -0.7,1.,0.]
+
+noise: .4
+
+# --------------------------------------------------------
+
 #    Feature based
-world: "ground.world"
+# world: "ground.world"
 
 nfeatures: 100
 scaleFactor: 1.2
@@ -70,7 +153,7 @@ ref_prefix: "reference_ground"
 
   # Aruco based
 # world: "ground_and_arucos.world"
-# imageProc: "arucos"
+world: "simple_lab_ground.world"
 aruco_dictionary: 4X4_1000
 
 adaptiveThreshWinSizeMin: 141
@@ -86,8 +169,11 @@ perspectiveRemoveIgnoredMarginPerCell: 0.2
 # --------------------------------------------------------
 
 system: mas
-point_type: features
-# type: arucos
+point_type: virtual
+# point_type: features
+# point_type: arucos
 
 vel_limits: [-0.2, 0.2]
+error_limits: [-1, 1]
+error_int_limits: [-5, 5]
 camera_angle: pi

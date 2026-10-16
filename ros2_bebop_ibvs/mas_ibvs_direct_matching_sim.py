@@ -21,7 +21,7 @@ import yaml
 
 #   Custom
 from .my_classes import *
-
+from .leaders import lead
 
 
 class Controller(FeatureMatcher):
@@ -37,7 +37,7 @@ class Controller(FeatureMatcher):
 
         #   State
         self.u = np.zeros(6)
-        self._u = np.zeros(6)
+        _u = np.zeros(6)
         self.data2save = False
         self.cv_image = None
         self.m_image = None
@@ -66,12 +66,16 @@ class Controller(FeatureMatcher):
         if enable_IBVS:
 
             #   config control
-            if self.k_int != 0:
-                self.ids_int = [[] for i in range(self.n_agents)]
-                self.err_int = [[] for i in range(self.n_agents)]
-                # self.err_int = [np.array([[],[]])]*self.n_agents
-                self.tick = -1.
-                self.tock = -1.
+            if self.leader:
+                self.control_ = self.leader_f
+            else:
+                self.control_ = self.control
+            # elif self.k_int != 0:
+            #     self.ids_int = [[] for i in range(self.n_agents)]
+            #     self.err_int = [[] for i in range(self.n_agents)]
+            #     # self.err_int = [np.array([[],[]])]*self.n_agents
+            #     self.tick = -1.
+            #     self.tock = -1.
 
             #   Config data storage
             self.config_data_storage()
@@ -141,6 +145,8 @@ class Controller(FeatureMatcher):
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
+        self.declare_parameter('leader', False)
+        self.declare_parameter('tanh', False)
 
         #   Config tracker
 
@@ -157,11 +163,14 @@ class Controller(FeatureMatcher):
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_int').value
 
+
         self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
         self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
+        self.leader = self.get_parameter('leader').value
+        self.enable_tanh = self.get_parameter('tanh').value
 
         self.get_logger().info(f"robot_name: {self.robot_name}_{self.label}")
 
@@ -206,9 +215,9 @@ class Controller(FeatureMatcher):
         self.reference_pose = self.reference_pose.reshape((-1,4))
 
         psi = self.reference_pose[self.label,3]
-        _R = np.array([[ np.sin(psi), -np.cos(psi),  0.],
-                       [-np.cos(psi), -np.sin(psi),  0.],
-                       [          0.,           0., -1.]])
+        _R = self.R_cam @ np.array([[np.cos(psi), -np.sin(psi), 0.],
+                                    [np.sin(psi),  np.cos(psi), 0.],
+                                    [         0.,           0., 1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
@@ -303,6 +312,8 @@ class Controller(FeatureMatcher):
     def state_changed_ibvs(self, msg):
         if msg.data == RESETVIS:
             return
+        if msg.data == CONTROL:
+            self.t0 = self.get_clock().now().nanoseconds * 1e-9
         # self.reset_flag = True
         self.new_state = msg.data
 
@@ -426,8 +437,14 @@ class Controller(FeatureMatcher):
             return
         self.custom_draw(self.m_image, self.p.T)
 
+    def leader_f(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        self.u = lead[self.label](t)
+
     def control(self):
         _n = 0.
+        self.error[self.label] = np.zeros(self.points.shape)
         for j in self.in_neighbors:
             if self.deltas[j] is None:
                 continue
@@ -436,11 +453,12 @@ class Controller(FeatureMatcher):
             if _ret is None:
                 continue
 
-            _delta_i, _delta_j = _ret
+            _delta_i, _delta_j, idx = _ret
             complement =  _delta_j - 1.*self.pref[j,:2].reshape((2,1))
             self.error[j] = complement - _delta_i
+            self.error[self.label][:,idx] += self.error[j]
             # self.error[j] = _delta_j - _delta_i - .1*self.pref[j,:2].reshape((2,1))
-            self.L = interaction_matrix_xyz(_delta_i, self.img_depth)
+            # self.L = interaction_matrix_xyz(_delta_i, self.img_depth)
             # self.L = interaction_matrix_xyz(complement, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
             # self.L = interaction_matrix_xyz(_p_i, self.img_depth)
@@ -454,17 +472,17 @@ class Controller(FeatureMatcher):
             # self.L = interaction_matrix_xyz(self.points_ref, self.img_depth)
             #   END TEST
 
-            L_inv = Inv_Moore_Penrose(self.L)
+            # L_inv = Inv_Moore_Penrose(self.L)
+            #
+            # if self.enable_log:
+            #     _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
+            #
+            # if L_inv is None:
+            #     self.get_logger().error("Invalid Ls matrix")
+            #     continue
 
-            if self.enable_log:
-                _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
-
-            if L_inv is None:
-                self.get_logger().error("Invalid Ls matrix")
-                continue
-
-            self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1) / float(self.error[j].shape[1])
-            _n += 1.
+            # _u +=  self.gain * L_inv @ self.error[j].T.reshape(-1) / float(self.error[j].shape[1])
+            # _n += 1.
 
             if self.m_image is None:
                 continue
@@ -478,6 +496,24 @@ class Controller(FeatureMatcher):
                         reproject = True)
 
 
+        mask = np.logical_or(self.error[self.label][0,:] !=0.,
+                             self.error[self.label][1,:] !=0.)
+
+        # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
+        self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        L_inv = Inv_Moore_Penrose(self.L)
+        if L_inv is None:
+            self.get_logger().error("Invalid Ls matrix")
+            _u = np.zeros(6)
+            self.u = np.zeros(6)
+            return
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(self.error[self.label].shape[1])
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
+        # _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+
         # # BEGIN DEBUG
         # if self.label != 0:
         #     self.u = np.zeros(6)
@@ -486,18 +522,18 @@ class Controller(FeatureMatcher):
 
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         #   6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -513,13 +549,13 @@ class Controller(FeatureMatcher):
                 self.save_data()
         else:
             #   IBFC
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             # if self.k_int != 0. and self.norm < 0.4 and self.norm > 0.:
             #     _image = self.control_int(_image)
             #
             # else:
             #     _image = self.control_p(_image)
-            self.control()
+            self.control_()
 
             _norm = 0.
             for j in self.in_neighbors:

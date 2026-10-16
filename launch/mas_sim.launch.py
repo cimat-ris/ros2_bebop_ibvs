@@ -19,9 +19,7 @@ def generate_launch_description():
     rd_template = Template(robot_desc) # convert string in template
 
     #   Configurations
-    # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mas_sim.yaml')
-    # yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mas_sim_tracking.yaml')
-    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mas_sim_arucos.yaml')
+    yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mas_sim.yaml')
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
     config["reference_image_prefix"] = os.path.join(pkg_bebop_ibvs, 'config', config['ref_prefix'])
@@ -44,6 +42,11 @@ def generate_launch_description():
         'on_exit_shutdown': 'true'}.items(),
     )
 
+    #   Leader config
+    leader = [False for i in range(int(config["n_agents"]))]
+    if "leader" in config:
+        for i in leader:
+            leader[i] = True
 
     bridge = []
     models = []
@@ -93,6 +96,7 @@ def generate_launch_description():
 
         # #   IBFC
         config["label"] = i
+        config["leader"] = leader[i]
         _controller = Node(
                 package='ros2_bebop_ibvs',
                 executable=config["control"],

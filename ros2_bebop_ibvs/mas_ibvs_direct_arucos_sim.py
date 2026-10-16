@@ -20,6 +20,7 @@ import yaml
 
 #   Custom
 from .my_classes import *
+from .leaders import lead
 
 
 
@@ -35,7 +36,7 @@ class Controller( ArUcoTracker):
 
         #   State
         self.u = np.zeros(6)
-        self._u = np.zeros(6)
+        _u = np.zeros(6)
         self.data2save = False
         self.cv_image = None
         self.m_image = None
@@ -64,7 +65,9 @@ class Controller( ArUcoTracker):
 
             #   config control
             #   config control
-            if self.k_int != 0:
+            if self.leader:
+                self.control_ = self.leader_f
+            elif self.k_int != 0:
                 self.control_ = self.control_int
             else:
                 self.control_ = self.control
@@ -138,6 +141,8 @@ class Controller( ArUcoTracker):
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
+        self.declare_parameter('leader', False)
+        self.declare_parameter('tanh', False)
 
         #   Config tracker
 
@@ -153,6 +158,8 @@ class Controller( ArUcoTracker):
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_integral').value
+        self.leader = self.get_parameter('leader').value
+        self.enable_tanh = self.get_parameter('tanh').value
 
         # self.K = self.get_parameter('K').value
         self.L = self.get_parameter('L').value
@@ -451,8 +458,8 @@ class Controller( ArUcoTracker):
 
     # def control(self):
     #     _n = 0.
-    #     self._u = np.zeros(6)
-    #     # self._u = np.zeros(4)
+    #     _u = np.zeros(6)
+    #     # _u = np.zeros(4)
     #     mismatch = len(self.in_neighbors)
     #     for j in self.in_neighbors:
     #         if self.deltas[j] is None:
@@ -495,7 +502,7 @@ class Controller( ArUcoTracker):
     #             self.get_logger().error("Invalid Ls matrix")
     #             continue
     #
-    #         self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
+    #         _u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
     #         _n += 1.
     #
     #         # if self.label == 0:
@@ -526,27 +533,32 @@ class Controller( ArUcoTracker):
     #
     #     # if _n != 0:
     #     #     self.get_logger().info(f"Neig:{_n}")
-    #     #     self._u /= _n
-    #     # self._u = np.zeros(6)
+    #     #     _u /= _n
+    #     # _u = np.zeros(6)
     #     # # END DEBUG
     #     #   6DOF
-    #     _w = self.R_cam @ self._u[3:]
-    #     _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     _w = self.R_cam @ _u[3:]
+    #     _v = (self.R_cam @ _u[:3]).reshape(-1)
     #     _v += np.cross( self.t_cam , _w.reshape(-1) )
     #     _w *= self.kw
     #     self.u[:3] = _v.copy()
     #     self.u[3:] = _w.reshape(-1)
     #     self.get_logger().info(str(self.u))
     #     #   4DOF
-    #     # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-    #     # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-    #     # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     # _w = self.R_cam @ np.array([0.,_u[3],0.])
+    #     # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+    #     # _v = (self.R_cam @ _u[:3]).reshape(-1)
     #     # _v += np.cross( self.t_cam , _w.reshape(-1) )
     #     # _w *= self.kw
     #     # self.u[:3] = _v.copy()
     #     # self.u[3:] = _w.copy()
     #
     #     return
+
+    def leader_f(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        self.u = lead[self.label](t)
 
     def control(self):
         _n = 0.
@@ -596,7 +608,7 @@ class Controller( ArUcoTracker):
 
 
         if mismatch == 0:
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             self.get_logger().warning("Complete mismatch")
             return
@@ -609,14 +621,17 @@ class Controller( ArUcoTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
-        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -628,20 +643,20 @@ class Controller( ArUcoTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -725,7 +740,7 @@ class Controller( ArUcoTracker):
 
 
         if mismatch == 0:
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             self.get_logger().warning("Complete mismatch")
             return
@@ -738,10 +753,10 @@ class Controller( ArUcoTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
 
          #   Integral filter to index
         _err_int = self.fetch_integral()
@@ -750,14 +765,17 @@ class Controller( ArUcoTracker):
         _error  =  self.error[self.label].T.reshape(-1)
         _error +=  self.k_int * _err_int.T.reshape(-1)
         _error /= float(mask.sum())
-        self._u = self.gain * L_inv @ _error
+        _u = self.gain * L_inv @ _error
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
         self.integration_step()
 
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -769,20 +787,20 @@ class Controller( ArUcoTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -797,6 +815,8 @@ class Controller( ArUcoTracker):
         # Control interemdiate state
         self.tock = self.get_clock().now().nanoseconds * 1e-9
         self.tick = self.tock
+
+        self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
         # self.ids_int = [i for i in self.ids]
         self.err_int = {}

@@ -21,6 +21,7 @@ import yaml
 
 #   Custom
 from .my_classes import *
+from .leaders import lead
 
 
 
@@ -34,7 +35,7 @@ class Controller( FeatureTracker):
 
         #   State
         self.u = np.zeros(6)
-        self._u = np.zeros(6)
+        _u = np.zeros(6)
         self.data2save = False
         self.cv_image = None
         self.m_image = None
@@ -62,11 +63,10 @@ class Controller( FeatureTracker):
         if enable_IBVS:
 
             #   config control
-            if self.k_int != 0:
+            if self.leader:
+                self.control_ = self.leader_f
+            elif self.k_int != 0:
                 self.control_ = self.control_int
-                self.ids_int = [[] for i in range(self.n_agents)]
-                self.err_int = [[] for i in range(self.n_agents)]
-                # self.err_int = [np.array([[],[]])]*self.n_agents
             else:
                 self.control_ = self.control
 
@@ -138,6 +138,8 @@ class Controller( FeatureTracker):
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
+        self.declare_parameter('leader', False)
+        self.declare_parameter('tanh', False)
 
         #   Config tracker
 
@@ -153,6 +155,9 @@ class Controller( FeatureTracker):
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_integral').value
+
+        self.leader = self.get_parameter('leader').value
+        self.enable_tanh = self.get_parameter('tanh').value
 
         self.L = self.get_parameter('L').value
         self.initial_cond = self.get_parameter('p0').value
@@ -214,7 +219,6 @@ class Controller( FeatureTracker):
         self.pref[:,:3] = self.pref[:,:3] / self.reference_pose[:,2].reshape((-1,1))
         self.pref[self.pref[:,3] < -np.pi, 3] += np.pi
         self.pref[self.pref[:,3] >  np.pi, 3] -= np.pi
-        self.get_logger().info(f"Ref{self.label}: {self.pref}")
 
         self.reference_pose = self.reference_pose[self.label]
 
@@ -311,14 +315,7 @@ class Controller( FeatureTracker):
 
         self.img_proc(self.cv_image)
 
-    def save_features(self,t):
-        with open(self.features_d, 'ab') as f:
-            for i, m in enumerate(self.ids):
-
-                data = (t, m)
-                data += tuple(self.p[i, :].reshape(-1))
-                binary = struct.pack('didd', *data)
-                f.write(binary)
+    def save_error(self,t):
 
         for j in self.in_neighbors:
             if self.error[j] is None:
@@ -378,8 +375,16 @@ class Controller( FeatureTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
+        with open(self.features_d, 'ab') as f:
+            for i, m in enumerate(self.ids):
+
+                data = (t, m)
+                data += tuple(self.p[i, :].reshape(-1))
+                binary = struct.pack('didd', *data)
+                f.write(binary)
+
         if not self.deltas is None:
-            self.save_features(t)
+            self.save_error(t)
 
 
         if self.k_int != 0:
@@ -437,8 +442,8 @@ class Controller( FeatureTracker):
 
     # def control(self):
     #     _n = 0.
-    #     self._u = np.zeros(6)
-    #     # self._u = np.zeros(4)
+    #     _u = np.zeros(6)
+    #     # _u = np.zeros(4)
     #     mismatch = len(self.in_neighbors)
     #     for j in self.in_neighbors:
     #         if self.deltas[j] is None:
@@ -480,7 +485,7 @@ class Controller( FeatureTracker):
     #             self.get_logger().error("Invalid Ls matrix")
     #             continue
     #
-    #         self._u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
+    #         _u +=  self.gain * L_inv @ self.error[j].T.reshape(-1)  / float(self.error[j].shape[1])
     #         _n += 1.
     #
     #         # if self.label == 0:
@@ -509,27 +514,32 @@ class Controller( FeatureTracker):
     #
     #     # if _n != 0:
     #     #     self.get_logger().info(f"Neig:{_n}")
-    #     #     self._u /= _n
-    #     # self._u = np.zeros(6)
+    #     #     _u /= _n
+    #     # _u = np.zeros(6)
     #     # # END DEBUG
     #     #   6DOF
-    #     _w = self.R_cam @ self._u[3:]
-    #     _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     _w = self.R_cam @ _u[3:]
+    #     _v = (self.R_cam @ _u[:3]).reshape(-1)
     #     _v += np.cross( self.t_cam , _w.reshape(-1) )
     #     _w *= self.kw
     #     self.u[:3] = _v.copy()
     #     self.u[3:] = _w.reshape(-1)
     #     self.get_logger().info(str(self.u))
     #     #   4DOF
-    #     # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-    #     # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-    #     # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+    #     # _w = self.R_cam @ np.array([0.,_u[3],0.])
+    #     # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+    #     # _v = (self.R_cam @ _u[:3]).reshape(-1)
     #     # _v += np.cross( self.t_cam , _w.reshape(-1) )
     #     # _w *= self.kw
     #     # self.u[:3] = _v.copy()
     #     # self.u[3:] = _w.copy()
     #
     #     return
+
+    def leader_f(self):
+
+        t = self.get_clock().now().nanoseconds * 1e-9
+        self.u = lead[self.label](t)
 
     def control(self):
         _n = 0.
@@ -585,7 +595,8 @@ class Controller( FeatureTracker):
 
         if mismatch == 0:
             self.reset_tracking = True
-            self._u = np.zeros(6)
+            # _u = np.zeros(6)
+            self.t0 = self.get_clock().now().nanoseconds * 1e-9
             self.u = np.zeros(6)
             return
 
@@ -597,14 +608,18 @@ class Controller( FeatureTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
-        self._u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        # _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(self.error[self.label].shape[1])
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -616,20 +631,20 @@ class Controller( FeatureTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -645,7 +660,7 @@ class Controller( FeatureTracker):
         # L_inv = Inv_Moore_Penrose(self.L)
         # if L_inv is None:
         #     self.get_logger().error("Invalid Ls matrix")
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.u = np.zeros(6)
         #     return
 
@@ -698,8 +713,11 @@ class Controller( FeatureTracker):
 
         if mismatch == 0:
             self.reset_tracking = True
-            self._u = np.zeros(6)
+            # _u = np.zeros(6)
+            self.t0 = self.get_clock().now().nanoseconds * 1e-9
             self.u = np.zeros(6)
+            self.ids_int = [i for i in range(self.p.shape[0])]
+            self.err_int = np.zeros(self.points.shape)
             return
 
         mask = np.logical_or(self.error[self.label][0,:] !=0.,
@@ -710,10 +728,10 @@ class Controller( FeatureTracker):
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
-            self._u = np.zeros(6)
+            _u = np.zeros(6)
             self.u = np.zeros(6)
             return
-        # self._u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
+        # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
 
         #   Integral filter to index
         filt = [a in self.ids for a in self.ids_int]
@@ -721,10 +739,14 @@ class Controller( FeatureTracker):
         self.ids_int = [i for i in self.ids]
 
         #   Control
-        _arg  =  self.error[self.label].T.reshape(-1)
-        _arg +=  self.k_int * self.err_int.T.reshape(-1)
-        _arg /= float(mask.sum())
-        self._u = self.gain * L_inv @ _arg
+        _error  =  self.error[self.label].T.reshape(-1)
+        _error +=  self.k_int * self.err_int.T.reshape(-1)
+        # _error /= float(mask.sum())
+        _error /= float(_error.shape[0]/2)
+        _u = self.gain * L_inv @ _error
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
         dt = self.tock - self.tick
@@ -735,7 +757,7 @@ class Controller( FeatureTracker):
 
         # BEGIN debug
         # if self.label == 0:
-        #     self._u = np.zeros(6)
+        #     _u = np.zeros(6)
         #     self.get_logger().info(str(self.error[self.label][:,mask]))
 
             # END debug
@@ -747,20 +769,20 @@ class Controller( FeatureTracker):
         #
         # if _n != 0:
         #     self.get_logger().info(f"Neig:{_n}")
-        #     self._u /= _n
-        # self._u = np.zeros(6)
+        #     _u /= _n
+        # _u = np.zeros(6)
         # # # END DEBUG
         # 6DOF
-        _w = self.R_cam @ self._u[3:]
-        _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        _w = self.R_cam @ _u[3:]
+        _v = (self.R_cam @ _u[:3]).reshape(-1)
         _v += np.cross( self.t_cam , _w.reshape(-1) )
         _w *= self.kw
         self.u[:3] = _v.copy()
         self.u[3:] = _w.reshape(-1)
         #   4DOF
-        # # _w = self.R_cam @ np.array([0.,self._u[3],0.])
-        # _w = self.R_cam @ np.array([0.,0.,self._u[3]])
-        # _v = (self.R_cam @ self._u[:3]).reshape(-1)
+        # # _w = self.R_cam @ np.array([0.,_u[3],0.])
+        # _w = self.R_cam @ np.array([0.,0.,_u[3]])
+        # _v = (self.R_cam @ _u[:3]).reshape(-1)
         # _v += np.cross( self.t_cam , _w.reshape(-1) )
         # _w *= self.kw
         # self.u[:3] = _v.copy()
@@ -776,6 +798,8 @@ class Controller( FeatureTracker):
         # Control interemdiate state
         self.tock = self.get_clock().now().nanoseconds * 1e-9
         self.tick = self.tock
+
+        self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
         self.ids_int = [i for i in range(self.p.shape[0])]
         self.err_int = np.zeros(self.points.shape)

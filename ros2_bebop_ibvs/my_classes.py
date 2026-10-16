@@ -631,7 +631,9 @@ class VirtualTracker(ImageProc):
     def __init__(self, name):
         super().__init__(name)
         super().declare_parameter('points3D', [1.]*3)
+        super().declare_parameter('noise', 0.)
         self.points3D = super().get_parameter('points3D').value
+        self.noise = super().get_parameter('noise').value
 
         self.points3D = np.array(self.points3D).reshape((-1,3)).T
 
@@ -657,6 +659,10 @@ class VirtualTracker(ImageProc):
         #   Projection
         _p = self.K @ _p
         _p = _p[:2,:] / _p[2,:]
+
+        if self.noise != 0.:
+            _p += np.random.normal(scale = self.noise,
+                                   size = _p.shape)
 
         self.p = _p.T
         self.points = self.normalize(_p)
@@ -699,7 +705,7 @@ class ArUcoTracker(ImageProc):
 
         self.found_arucos_w = False
 
-    def match(self, ids_m, delta_m):
+    def match(self, ids_m, delta_m = None):
 
         _query = set(self.ids)
         _query = _query.intersection(set(self.ids))
@@ -720,6 +726,10 @@ class ArUcoTracker(ImageProc):
         for q in _query:
             k =  ids_m.index(q)
             match = match + list(range(k*4, k*4 +4))
+
+        if delta_m is None:
+            return _query, query
+
 
         _delta_i = self.points[:,query]
         _delta_j = delta_m[:,match]
@@ -1047,7 +1057,7 @@ class FeatureMatcher(ImageProc):
 
 
 
-    def match(self, desc, deltas):
+    def match(self, desc, deltas, enable_ransac = True):
 
         #   match
         knn_matches = self.flann.knnMatch(desc,
@@ -1064,6 +1074,8 @@ class FeatureMatcher(ImageProc):
             super().get_logger().warning("No Neighboring Matches available")
             return None
 
+        idx = [m.trainIdx for m in good_matches]
+
         _delta_i = np.float32([
             self.points[:,m.trainIdx]
             for m in good_matches
@@ -1073,6 +1085,9 @@ class FeatureMatcher(ImageProc):
             for m in good_matches
         ])
 
+
+        if not enable_ransac:
+            return _delta_i, _delta_j, idx
 
         _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
         _mask = _mask.reshape(-1)
@@ -1086,7 +1101,12 @@ class FeatureMatcher(ImageProc):
         _delta_i = _delta_i.reshape((2,-1))
         _delta_j = _delta_j.reshape((2,-1))
 
-        return _delta_i, _delta_j
+        _idx = []
+        for i, m in zip(idx, _mask):
+            if m==1:
+                _idx.append(i)
+
+        return _delta_i, _delta_j, _idx
 
     def img_proc(self):
         gray_image = cv2.cvtColor(self.cv_image, cv2.COLOR_BGR2GRAY)
