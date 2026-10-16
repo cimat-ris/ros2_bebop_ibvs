@@ -33,7 +33,7 @@
         <specular>0.5 0.5 0.5 1</specular>
         <pbr>
         <metal>
-          <albedo_map>model://ArUco/6x6_1000-99.png</albedo_map>
+          <albedo_map>model://ArUco/6X6_1000-99.png</albedo_map>
         </metal>
       </pbr>
       </material>
