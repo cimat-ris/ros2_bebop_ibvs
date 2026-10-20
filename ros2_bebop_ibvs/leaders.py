@@ -19,7 +19,7 @@ def circle(t):
     return u
 
 def constant(t):
-    u = np.array([.05,0.,0.,0.,0.,0.])
+    u = np.array([.02,0.,0.,0.,0.,0.])
     return u
 
 
@@ -33,6 +33,7 @@ def constant(t):
 #   Each index corresponds to the label of the agent
 
 lead = [constant,
+        constant,
         constant,
         constant,
         constant,

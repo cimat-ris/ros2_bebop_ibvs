@@ -144,6 +144,8 @@ class State(Node):
         self.current_pose = Pose()
         self.m_vel = Twist()
         self.takeoff_complete = False
+        # self.reset_tracking = False
+        self.state_m = self.s_idle
 
         # Define in subclass
         self.initial_cond = None
@@ -214,6 +216,12 @@ class State(Node):
             self.get_logger().info("State change: REFERENCE")
             self.state = self.s_reference
             self.init_complete = False
+            return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_idle
+            self.state = self.s_resetvis
+            self.new_state = IDLE
 
     def s_takeoff(self):
 
@@ -261,6 +269,11 @@ class State(Node):
             self.state = self.s_reference
             self.init_complete = False
             return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_takeoff
+            self.state = self.s_resetvis
+            self.new_state = TAKEOFF
 
     def s_init_cond(self):
 
@@ -328,6 +341,12 @@ class State(Node):
             self.get_logger().info("State change: REFERENCE")
             self.state = self.s_reference
             self.init_complete = False
+            return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_init_cond
+            self.state = self.s_resetvis
+            self.new_state = INITCOND
 
     def s_reference(self):
 
@@ -393,6 +412,16 @@ class State(Node):
             self.get_logger().info("State change: INITCOND")
             self.state = self.s_init_cond
             self.init_complete = False
+            return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_reference
+            self.state = self.s_resetvis
+            self.new_state = REFERENCE
+
+    def s_resetvis(self):
+        # self.reset_tracking = True
+        self.state = self.state_m
 
     def s_land(self):
         current_z = self.current_pose.position.z
@@ -422,6 +451,12 @@ class State(Node):
         if self.new_state == STOP:
             self.get_logger().info("State change: STOP")
             self.state = self.s_stop
+            return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_land
+            self.state = self.s_resetvis
+            self.new_state = LAND
 
     def s_control(self):
 
@@ -460,6 +495,12 @@ class State(Node):
             self.get_logger().info("State change: REFERENCE")
             self.state = self.s_reference
             self.init_complete = False
+            return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_control
+            self.state = self.s_resetvis
+            self.new_state = CONTROL
 
     def s_hold(self):
 
@@ -487,6 +528,11 @@ class State(Node):
             self.state = self.s_reference
             self.init_complete = False
             return
+        if self.new_state == RESETVIS:
+            self.get_logger().info("State change: RESETVIS")
+            self.state_m = self.s_hold
+            self.state = self.s_resetvis
+            self.new_state = HOLD
 
     def s_stop(self):
         self.cmd_pub.publish(Twist())

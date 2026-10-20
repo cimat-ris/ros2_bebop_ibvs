@@ -41,11 +41,12 @@ class Controller( ArUcoTracker):
         self.cv_image = None
         self.m_image = None
         self.error = [None]*self.n_agents
-        self.norm = -1.
+        self.norm = 100.
         self.deltas = [None]*self.n_agents
         self.n_ids = [None]*self.n_agents
         self.ids_save = [None]*self.n_agents
         self.err_int = None
+        self.int_act = False
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -379,8 +380,9 @@ class Controller( ArUcoTracker):
                 binary = struct.pack('dd', *data)
                 f.write(binary)
 
-        if self.p is None:
+        if self.ids is None:
             return
+
 
         with open(self.arucos_d, 'ab') as f:
             for i, m in enumerate(self.ids):
@@ -605,6 +607,12 @@ class Controller( ArUcoTracker):
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        _delta_i+self.pref[j,:2].reshape((2,1)),
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
 
 
         if mismatch == 0:
@@ -625,7 +633,7 @@ class Controller( ArUcoTracker):
             self.u = np.zeros(6)
             return
         # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
-        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
+        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(self.error[self.label].shape[1])
         if self.enable_tanh:
             t = self.get_clock().now().nanoseconds * 1e-9
             _u *= np.tanh(0.5*(t-self.t0))
@@ -679,8 +687,8 @@ class Controller( ArUcoTracker):
 
     def integration_step(self):
         dt = self.tock - self.tick
-        self.tick = self.tock
-        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        # self.tick = self.tock
+        # self.tock = self.get_clock().now().nanoseconds * 1e-9
         for i, k  in enumerate( self.ids):
             if k in self.err_int:
                 self.err_int[k] += dt * self.error[self.label][:,i*4:i*4+4]
@@ -737,7 +745,12 @@ class Controller( ArUcoTracker):
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
                         reproject = True)
-
+            self.custom_draw_matching(self.m_image,
+                        _delta_i,
+                        _delta_i+self.pref[j,:2].reshape((2,1)),
+                        color1 = (0,200,0),
+                        color2 = (0,124,int(255*j / self.n_agents)),
+                        reproject = True)
 
         if mismatch == 0:
             _u = np.zeros(6)
@@ -764,14 +777,21 @@ class Controller( ArUcoTracker):
         #   Control
         _error  =  self.error[self.label].T.reshape(-1)
         _error +=  self.k_int * _err_int.T.reshape(-1)
-        _error /= float(mask.sum())
+        _error /= float(self.error[self.label].shape[1])
         _u = self.gain * L_inv @ _error
         if self.enable_tanh:
             t = self.get_clock().now().nanoseconds * 1e-9
             _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
-        self.integration_step()
+        self.tick = self.tock
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        if self.int_act:
+            self.integration_step()
+        else:
+            if self.norm < 0.1:
+                self.get_logger().info(f"PI activated {self.label}")
+                self.int_act = True
 
         # BEGIN debug
         # if self.label == 0:
@@ -823,6 +843,7 @@ class Controller( ArUcoTracker):
         for i in self.ids:
             self.err_int[i] = np.zeros((2,4))
 
+        self.int_act = False
         self.state = self.s_control_
 
     def s_control_(self):

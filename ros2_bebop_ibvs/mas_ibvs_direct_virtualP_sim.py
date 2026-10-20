@@ -43,6 +43,7 @@ class Controller( VirtualTracker):
         self.norm = -1.
         self.deltas = [None]*self.n_agents
         self.s_format = 'di' + 'dd'* self.points3D.shape[1]
+        self.int_act = False
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -183,6 +184,7 @@ class Controller( VirtualTracker):
             "reperence_pose" : self.reference_pose,
             "enable_polar" : self.enable_polar,
             "enable_log" : self.enable_log,
+            "noise" : self.noise,
             }
 
 
@@ -560,12 +562,16 @@ class Controller( VirtualTracker):
             _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
-        dt = self.tock - self.tick
         self.tick = self.tock
         self.tock = self.get_clock().now().nanoseconds * 1e-9
-        # self.err_int *= 0.8    #   Filter
-        self.err_int += dt * self.error[self.label]
-
+        if self.int_act:
+            dt = self.tock - self.tick
+            # self.err_int *= 0.8    #   Filter
+            self.err_int += dt * self.error[self.label]
+        else:
+            if self.norm < 0.1:
+                self.get_logger().info(f"PI activated {self.label}")
+                self.int_act = True
 
         # BEGIN debug
         # if self.label == 0:
@@ -608,6 +614,7 @@ class Controller( VirtualTracker):
         self.tock = self.get_clock().now().nanoseconds * 1e-9
         self.tick = self.tock
         self.err_int = np.zeros((2,self.points3D.shape[1]))
+        self.int_act = False
 
         self.t0 = self.get_clock().now().nanoseconds * 1e-9
         self.state = self.s_control_
@@ -628,6 +635,10 @@ class Controller( VirtualTracker):
                 _v = self.error[j].reshape(-1)
                 _norm += np.dot(_v,_v) / float(_v.shape[0])
             self.norm = np.sqrt(_norm)
+            # if self.norm < 0.1:
+            #     if not self.int_act:
+            #         self.get_logger().info(f"PI activated {self.label}")
+            #         self.int_act = True
             self.data2save = True
             self.save_data()
 

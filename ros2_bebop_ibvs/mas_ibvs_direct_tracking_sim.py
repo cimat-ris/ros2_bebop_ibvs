@@ -45,6 +45,7 @@ class Controller( FeatureTracker):
         self.desc = [None]*self.n_agents
         self.deltas = [None]*self.n_agents
         self.ids_save = [None]*self.n_agents
+        self.int_act = False
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -285,9 +286,6 @@ class Controller( FeatureTracker):
 
 
     def state_changed_ibvs(self, msg):
-        if msg.data == RESETVIS:
-            self.state = self.control
-            return
         self.new_state = msg.data
 
     def state_changed_simple(self, msg):
@@ -716,8 +714,8 @@ class Controller( FeatureTracker):
             # _u = np.zeros(6)
             self.t0 = self.get_clock().now().nanoseconds * 1e-9
             self.u = np.zeros(6)
-            self.ids_int = [i for i in range(self.p.shape[0])]
-            self.err_int = np.zeros(self.points.shape)
+            # self.ids_int = [i for i in range(self.p.shape[0])]
+            # self.err_int = np.zeros(self.points.shape)
             return
 
         mask = np.logical_or(self.error[self.label][0,:] !=0.,
@@ -739,6 +737,11 @@ class Controller( FeatureTracker):
         self.ids_int = [i for i in self.ids]
 
         #   Control
+        if self.error[self.label].shape[1] != self.err_int.shape[1]:
+            self.get_logger().info(str(self.ids_int))
+            self.get_logger().info(str(self.ids))
+            self.ids_int = [i for i in range(self.p.shape[0])]
+            self.err_int = np.zeros(self.points.shape)
         _error  =  self.error[self.label].T.reshape(-1)
         _error +=  self.k_int * self.err_int.T.reshape(-1)
         # _error /= float(mask.sum())
@@ -749,10 +752,16 @@ class Controller( FeatureTracker):
             _u *= np.tanh(0.5*(t-self.t0))
 
         #   Integration step
-        dt = self.tock - self.tick
         self.tick = self.tock
         self.tock = self.get_clock().now().nanoseconds * 1e-9
-        self.err_int += dt * self.error[self.label]
+        if self.int_act:
+            dt = self.tock - self.tick
+            # self.err_int *= 0.8    #   Filter
+            self.err_int += dt * self.error[self.label]
+        else:
+            if self.norm < 0.1:
+                self.get_logger().info(f"PI activated {self.label}")
+                self.int_act = True
 
 
         # BEGIN debug
@@ -790,6 +799,24 @@ class Controller( FeatureTracker):
 
         return
 
+    def s_resetvis(self):
+
+        self.reset_tracking = True
+        self.img_proc(self.cv_image)
+
+        # Control interemdiate state
+        self.tock = self.get_clock().now().nanoseconds * 1e-9
+        self.tick = self.tock
+
+        self.t0 = self.get_clock().now().nanoseconds * 1e-9
+
+        self.ids_int = [i for i in range(self.p.shape[0])]
+        self.err_int = np.zeros(self.points.shape)
+
+
+        super().s_resetvis()
+
+
     def s_control(self):
 
         self.reset_tracking = True
@@ -803,6 +830,8 @@ class Controller( FeatureTracker):
 
         self.ids_int = [i for i in range(self.p.shape[0])]
         self.err_int = np.zeros(self.points.shape)
+
+        self.int_act = False
 
         self.state = self.s_control_
 
@@ -822,6 +851,10 @@ class Controller( FeatureTracker):
                 _v = self.error[j].reshape(-1)
                 _norm += np.dot(_v,_v) / float(_v.shape[0])
             self.norm = np.sqrt(_norm)
+            # if self.norm < 0.1:
+            #     if not self.int_act:
+            #         self.get_logger().info(f"PI activated {self.label}")
+            #         self.int_act = True
             self.data2save = True
             self.save_data()
 
