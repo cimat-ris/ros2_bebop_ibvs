@@ -40,7 +40,7 @@ class Controller( FeatureTracker):
         self.cv_image = None
         self.m_image = None
         self.error = [None]*self.n_agents
-        self.norm = -1.
+        self.norm = 200.
         self.lost_features = False
         self.desc = [None]*self.n_agents
         self.deltas = [None]*self.n_agents
@@ -132,6 +132,7 @@ class Controller( FeatureTracker):
         self.declare_parameter('img_depth', 1.)
         self.declare_parameter('gain', 1.)
         self.declare_parameter('gain_integral', 0.)
+        self.declare_parameter('th_integral', 0.1)
         self.declare_parameter('gain_w', 1.)
 
         self.declare_parameter('L', [0])
@@ -156,6 +157,7 @@ class Controller( FeatureTracker):
         self.gain = self.get_parameter('gain').value
         self.kw = self.get_parameter('gain_w').value
         self.k_int = self.get_parameter('gain_integral').value
+        self.th_int = self.get_parameter('th_integral').value
 
         self.leader = self.get_parameter('leader').value
         self.enable_tanh = self.get_parameter('tanh').value
@@ -183,8 +185,9 @@ class Controller( FeatureTracker):
             "gain" : self.gain,
             "kw" : self.kw,
             "k_int" : self.k_int,
+            "th_int" : self.th_int,
             "gain_takeoff" : self.gain_takeoff,
-            "K" : self.K,
+            "K" : self.K.ravel().tolist(),
             "L" : self.L,
             "initial_cond" : self.initial_cond,
             "reperence_pose" : self.reference_pose,
@@ -211,12 +214,13 @@ class Controller( FeatureTracker):
         self.reference_pose = self.reference_pose.reshape((-1,4))
 
         psi = self.reference_pose[self.label,3]
-        _R = self.R_cam @ np.array([[np.cos(psi), -np.sin(psi), 0.],
-                                    [np.sin(psi),  np.cos(psi), 0.],
+        _R = self.R_cam @ np.array([[np.cos(-psi), -np.sin(-psi), 0.],
+                                    [np.sin(-psi),  np.cos(-psi), 0.],
                                     [         0.,           0., 1.]])
         self.pref = self.reference_pose - self.reference_pose[self.label,:]
 
         self.pref[:,:3] = -(_R @ self.pref[:,:3].T).T
+        self.get_logger().info(str(self.pref[:,:3]))
         self.pref[:,:3] = self.pref[:,:3] / self.reference_pose[:,2].reshape((-1,1))
         self.pref[self.pref[:,3] < -np.pi, 3] += np.pi
         self.pref[self.pref[:,3] >  np.pi, 3] -= np.pi
@@ -340,7 +344,7 @@ class Controller( FeatureTracker):
         if self.err_int is None:
             return
         with open(self.error_int_d, 'ab') as f:
-            for i, m in enumerate( self.ids):
+            for i, m in enumerate( self.ids_int):
 
                 data = (t, m)
                 data += tuple(self.err_int[:,i].T.reshape(-1))
@@ -589,6 +593,7 @@ class Controller( FeatureTracker):
                         _delta_i+self.pref[j,:2].reshape((2,1)),
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
+                        line_thickness = 2,
                         reproject = True)
 
         if mismatch == 0:
@@ -598,8 +603,8 @@ class Controller( FeatureTracker):
             self.u = np.zeros(6)
             return
 
-        mask = np.logical_or(self.error[self.label][0,:] !=0.,
-                             self.error[self.label][1,:] !=0.)
+        # mask = np.logical_or(self.error[self.label][0,:] !=0.,
+        #                      self.error[self.label][1,:] !=0.)
 
         # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
         self.L = interaction_matrix_xyz(self.points, self.img_depth)
@@ -611,7 +616,9 @@ class Controller( FeatureTracker):
             return
         # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
         # _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(mask.sum())
-        _u = self.gain * L_inv @ self.error[self.label].T.reshape(-1)  / float(self.error[self.label].shape[1])
+        _u =  L_inv @ self.error[self.label].T.reshape(-1)
+        _u *= self.gain
+        _u /=  float(self.error[self.label].shape[1])
         if self.enable_tanh:
             t = self.get_clock().now().nanoseconds * 1e-9
             _u *= np.tanh(0.5*(t-self.t0))
@@ -654,13 +661,8 @@ class Controller( FeatureTracker):
         _n = 0.
         self.error[self.label] = np.zeros(self.points.shape)
         mismatch = len(self.in_neighbors)
-        # self.L = interaction_matrix_xyz(self.points, self.img_depth)
-        # L_inv = Inv_Moore_Penrose(self.L)
-        # if L_inv is None:
-        #     self.get_logger().error("Invalid Ls matrix")
-        #     _u = np.zeros(6)
-        #     self.u = np.zeros(6)
-        #     return
+
+        count = np.zeros(self.points.shape[1])
 
         if self.enable_log:
             _, self.svd[j], _ = np.linalg.svd(self.L.T @ self.L)
@@ -680,6 +682,8 @@ class Controller( FeatureTracker):
             self.error[j] = complement - _delta_i
             self.error[self.label][:,idx] += self.error[j]
             self.ids_save[j] = [self.ids[k] for k in idx]
+
+            count[idx] += 1.
 
             # # BEGIN debug
             # if self.label == 0:
@@ -707,19 +711,20 @@ class Controller( FeatureTracker):
                         _delta_i+self.pref[j,:2].reshape((2,1)),
                         color1 = (0,200,0),
                         color2 = (0,124,int(255*j / self.n_agents)),
+                        line_thickness = 2,
                         reproject = True)
 
-        if mismatch == 0:
+
+        # if mismatch == 0:
+        if mismatch < len(self.in_neighbors):
             self.reset_tracking = True
             # _u = np.zeros(6)
             self.t0 = self.get_clock().now().nanoseconds * 1e-9
             self.u = np.zeros(6)
-            # self.ids_int = [i for i in range(self.p.shape[0])]
-            # self.err_int = np.zeros(self.points.shape)
             return
 
-        mask = np.logical_or(self.error[self.label][0,:] !=0.,
-                             self.error[self.label][1,:] !=0.)
+        # mask = np.logical_or(self.error[self.label][0,:] !=0.,
+        #                      self.error[self.label][1,:] !=0.)
 
         # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
         self.L = interaction_matrix_xyz(self.points, self.img_depth)
@@ -731,6 +736,15 @@ class Controller( FeatureTracker):
             return
         # _u = self.gain * L_inv @ self.error[self.label][:,mask].T.reshape(-1)
 
+        # if not self.m_image is None:
+        #     self.custom_draw_matching(self.m_image,
+        #                     self.points,
+        #                      self.error[self.label]+self.points,
+        #                      color1=None,
+        #                      color2=(255, 0, 0),
+        #                      reproject = True)
+
+
         #   Integral filter to index
         filt = [a in self.ids for a in self.ids_int]
         self.err_int = self.err_int[:,filt]
@@ -740,13 +754,20 @@ class Controller( FeatureTracker):
         if self.error[self.label].shape[1] != self.err_int.shape[1]:
             self.get_logger().info(str(self.ids_int))
             self.get_logger().info(str(self.ids))
-            self.ids_int = [i for i in range(self.p.shape[0])]
+            self.ids_int = [i for i in self.ids]
             self.err_int = np.zeros(self.points.shape)
+            self.get_logger().warning("Integral misshape")
+        # _error  =  self.error[self.label]
+        # _error +=  self.k_int * self.err_int
+        # count[count == 0.] = 1.
+        # _error = _error / count
+        # _error = _error.T.reshape(-1)
+
         _error  =  self.error[self.label].T.reshape(-1)
         _error +=  self.k_int * self.err_int.T.reshape(-1)
-        # _error /= float(mask.sum())
-        _error /= float(_error.shape[0]/2)
         _u = self.gain * L_inv @ _error
+        _u /= float(_error.shape[0]/2)
+        # _u /= float(mask.sum())
         if self.enable_tanh:
             t = self.get_clock().now().nanoseconds * 1e-9
             _u *= np.tanh(0.5*(t-self.t0))
@@ -759,7 +780,7 @@ class Controller( FeatureTracker):
             # self.err_int *= 0.8    #   Filter
             self.err_int += dt * self.error[self.label]
         else:
-            if self.norm < 0.1:
+            if self.norm < self.th_int:
                 self.get_logger().info(f"PI activated {self.label}")
                 self.int_act = True
 
@@ -810,7 +831,7 @@ class Controller( FeatureTracker):
 
         self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
-        self.ids_int = [i for i in range(self.p.shape[0])]
+        self.ids_int = [i for i in self.ids]
         self.err_int = np.zeros(self.points.shape)
 
 
@@ -819,8 +840,8 @@ class Controller( FeatureTracker):
 
     def s_control(self):
 
-        self.reset_tracking = True
-        self.img_proc(self.cv_image)
+        # self.reset_tracking = True
+        # self.img_proc(self.cv_image)
 
         # Control interemdiate state
         self.tock = self.get_clock().now().nanoseconds * 1e-9
@@ -828,7 +849,7 @@ class Controller( FeatureTracker):
 
         self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
-        self.ids_int = [i for i in range(self.p.shape[0])]
+        self.ids_int = [i for i in self.ids]
         self.err_int = np.zeros(self.points.shape)
 
         self.int_act = False

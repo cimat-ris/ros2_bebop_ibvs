@@ -646,22 +646,24 @@ class ImageProc(State):
 
             # Draw points
             cv2.circle(m_image,
-                       _points1[i,:].astype(int),
-                       point_radius, color1, -1)
-            cv2.circle(m_image,
                        _points2[i,:].astype(int),
                        int(0.5*point_radius), color2, -1)
+            if color1 is None:
+                continue
+            cv2.circle(m_image,
+                       _points1[i,:].astype(int),
+                       point_radius, color1, -1)
 
     def custom_draw(self, m_image, points,
                          color=(0, 0, 255),
                          point_radius=3,
-                         line_thickness = 1,
                          reproject = False):
 
         if reproject:
             _points =  np.vstack([points, np.ones(points.shape[1])])
             _points = self.K @ _points
             _points = _points[:2,:] / _points[2,:]
+            _points = _points.T
         else:
             _points =  points.T
 
