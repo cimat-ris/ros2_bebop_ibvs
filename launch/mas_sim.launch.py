@@ -5,6 +5,7 @@ from launch_ros.actions import Node, ROSTimer
 from string import Template
 import os
 import yaml
+from shutil import copy2
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
@@ -29,6 +30,9 @@ def generate_launch_description():
     if not os.path.exists(config["output"]):
         print(f"Output directory  {config["output"]} does not exists")
         return
+    copy2(yaml_control, os.path.join(config["output"], "params.yaml"))
+
+    # Bridge config
     bridge_config = os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml')
 
     # Launch Gazebo
@@ -38,8 +42,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'gz_args': f"-r  -z 10000 {config["world"]} ",
-            # 'gz_args': f"-r -s -z 10000 {config["world"]} ",
-            # 'gz_args': f"-r -z 100000 {config["world"]} ",
+            # 'gz_args': f"-r -s  -z 1000 {config["world"]} ",
         'on_exit_shutdown': 'true'}.items(),
     )
 

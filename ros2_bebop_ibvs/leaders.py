@@ -52,7 +52,7 @@ def constant(t):
     return u
 
 def constant2(t):
-    u_t = 0.02 * R @ np.array([1.,0.,0.])
+    u_t = 0.01 * R @ np.array([1.,0.,0.])
     u_r = np.array([0.,0.,0.])
     return np.concatenate((u_t,u_r))
 

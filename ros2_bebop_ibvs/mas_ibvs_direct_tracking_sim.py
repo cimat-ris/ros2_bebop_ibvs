@@ -46,6 +46,8 @@ class Controller( FeatureTracker):
         self.deltas = [None]*self.n_agents
         self.ids_save = [None]*self.n_agents
         self.int_act = False
+        self.error_counter = 0
+        self.error_counter_th = 200
 
         if self.enable_log:
             self.svd = [None]*self.n_agents
@@ -140,6 +142,7 @@ class Controller( FeatureTracker):
         self.declare_parameter('pd', [1.]*4)
         self.declare_parameter('polar', False)
         self.declare_parameter('save_log', False)
+        self.declare_parameter('enable_video', True)
         self.declare_parameter('leader', False)
         self.declare_parameter('tanh', False)
 
@@ -167,39 +170,10 @@ class Controller( FeatureTracker):
         self.reference_pose = self.get_parameter('pd').value
         self.enable_polar = self.get_parameter('polar').value
         self.enable_log = self.get_parameter('save_log').value
+        self.enable_video = self.get_parameter('enable_video').value
 
         self.get_logger().info(f"robot_name: {self.robot_name}_{self.label}")
 
-        # Convert parameters to a dictionary
-        param_dict = {
-            "frequency" : self.frequency,
-            "robot_name" : self.robot_name,
-            "takeoff_threshold" : self.takeoff_threshold,
-            "landing_threshold" : self.landing_threshold,
-            "takeoff_height" : self.takeoff_height,
-            "label" : self.label,
-            "n_agents" : self.n_agents,
-            "reference_image_prefix" : self.reference_image_prefix,
-            "output" : self.output,
-            "img_depth" : self.img_depth,
-            "gain" : self.gain,
-            "kw" : self.kw,
-            "k_int" : self.k_int,
-            "th_int" : self.th_int,
-            "gain_takeoff" : self.gain_takeoff,
-            "K" : self.K.ravel().tolist(),
-            "L" : self.L,
-            "initial_cond" : self.initial_cond,
-            "reperence_pose" : self.reference_pose,
-            "enable_polar" : self.enable_polar,
-            "enable_log" : self.enable_log,
-            }
-
-
-        # Save to YAML file
-        _name = os.path.join(self.output, f"params.yaml")
-        with open(_name, 'w') as yaml_file:
-            yaml.dump(param_dict, yaml_file)
 
         #   inital conditions
         if len(self.reference_pose) != 4*self.n_agents:
@@ -436,6 +410,8 @@ class Controller( FeatureTracker):
 
 
     def preproc_image(self):
+        if not self.enable_video :
+            return
         if  self.cv_image is None:
             return
         self.m_image = self.cv_image.copy()
@@ -608,6 +584,7 @@ class Controller( FeatureTracker):
 
         # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
         self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        # self.L = interaction_matrix_xyz(self.points, self.current_pose.position.z)
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
@@ -728,6 +705,7 @@ class Controller( FeatureTracker):
 
         # self.L = interaction_matrix_xyz(self.points[:,mask], self.img_depth)
         self.L = interaction_matrix_xyz(self.points, self.img_depth)
+        # self.L = interaction_matrix_xyz(self.points, self.current_pose.position.z)
         L_inv = Inv_Moore_Penrose(self.L)
         if L_inv is None:
             self.get_logger().error("Invalid Ls matrix")
@@ -876,6 +854,10 @@ class Controller( FeatureTracker):
             #     if not self.int_act:
             #         self.get_logger().info(f"PI activated {self.label}")
             #         self.int_act = True
+            self.error_counter += 1
+            if self.error_counter >= self.error_counter_th:
+                self.get_logger().info(str(self.norm))
+                self.error_counter = 0
             self.data2save = True
             self.save_data()
 

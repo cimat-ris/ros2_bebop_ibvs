@@ -869,6 +869,7 @@ class FeatureTracker(ImageProc):
         self.points = None
         self.desc_self = None
         self.reset_tracking = False
+        self.first_track = True
 
         #   TODO Expand using defaults in docs
 
@@ -1011,15 +1012,10 @@ class FeatureTracker(ImageProc):
 
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        #   Detect
-        # Extract Matches if not enough
-        new_pts, status, err = cv2.calcOpticalFlowPyrLK(
-            self.prev_image, gray_image,
-            self.p, None,
-            **self.lk_params)
-        self.prev_image = gray_image.copy()
 
-        if status is None or any ([self.p.shape[0] < self.detect_threshold,
+
+        #   Detect if no enough
+        if any ([self.p.shape[0] < self.detect_threshold,
                                     self.reset_tracking]):
             super().get_logger().info("Reseting tracking.")
             self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
@@ -1028,8 +1024,38 @@ class FeatureTracker(ImageProc):
             self.p = np.float32([k.pt for k in self.kp  ])
             self.ids = [i for i in range(self.p.shape[0])]
             self.reset_tracking = False
+            self.first_track = True
+            self.points = self.normalize(self.p.astype(float).T)
+            return
+
+        # Tracking
+        new_pts, status, err = cv2.calcOpticalFlowPyrLK(
+            self.prev_image, gray_image,
+            self.p, None,
+            **self.lk_params)
+        self.prev_image = gray_image.copy()
+
+        if status is None:
+            #   Reset if unable to track
+            super().get_logger().info("Reseting tracking.")
+            self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
+            if len(self.kp) <4:
+                return
+            self.p = np.float32([k.pt for k in self.kp  ])
+            self.ids = [i for i in range(self.p.shape[0])]
+            self.reset_tracking = False
+            self.first_track = True
+            self.points = self.normalize(self.p.astype(float).T)
+
         else:
             status = status.reshape(-1)
+            #   Filter by error does not help the IBVS due to discontinuities
+            if self.first_track:
+                for i in range(len(err[0])):
+                    if err[0][i] > .5:
+                        status[i] = 0
+                self.first_track = False
+
             self.p = new_pts[status == 1]
             _kp = []
             _ids = []
@@ -1040,10 +1066,8 @@ class FeatureTracker(ImageProc):
             self.kp = _kp
             self.ids = _ids
             self.desc_self = self.desc_self[status == 1]
+            self.points = self.normalize(self.p.astype(float).T)
 
-
-        #  Kp conversion
-        self.points = self.normalize(self.p.astype(float).T)
 
 
 

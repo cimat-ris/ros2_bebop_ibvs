@@ -54,8 +54,13 @@ class Ploter():
 
     def __init__(self, arg):
 
-        name = arg.config
         self.directory = arg.directory
+        if len(arg.config) == 0:
+            name = os.path.join(self.directory, "params.yaml")
+        else:
+            name = arg.config
+
+
         with open(name, 'r') as file:
             _dict = yaml.safe_load(file)
 
@@ -533,7 +538,7 @@ class Ploter():
         if not self.n_e is None:
             print("Ploting Error Norm")
             # plotNErr(self.directory, n_e, f"Error{sufx}.pdf")
-            plotTime(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.1)
+            plotTime(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.)
         if not self.velocities is None:
             print("Ploting Velocities ")
             plotVel(self.directory, self.velocities,
@@ -1046,7 +1051,7 @@ def plotFeat(directory, features, name): #, reference):
                             # s_ref,
                         camera_iMsize,
                         enableLims = True)
-    labels = ["Start","End","Reference","trayectory"]
+    labels = ["Start","End","Reference","trajectory"]
     symbols = [mlines.Line2D([0],[0],marker='*',color='k'),
                mlines.Line2D([0],[0],marker='o',color='k'),
                mlines.Line2D([0],[0],marker='^',color='k'),
@@ -1197,8 +1202,8 @@ if __name__ ==  "__main__":
     parser.add_argument( 'directory', type=str, default = 'output',
         help = "Directory name (default output/)")
     parser.add_argument( '--config', type=str,
-        default = 'config/mas_sim.yaml',
-        help = "File containign the configurations (defaultconfig/mas_sim.yaml)")
+        default = '',
+        help = "File containign the configurations (default: directory/params.yaml)")
 
     arg = parser.parse_args()
     main(arg)
