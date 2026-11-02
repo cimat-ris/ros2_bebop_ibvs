@@ -856,6 +856,9 @@ def error_state_6(reference,
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax.view_init(elev=30, azim=165)
+    ax.set_xlim(-1.1,1.1)
+    ax.set_ylim(-1.1,1.1)
+    ax.set_zlim(-1.1,1.1)
     plot_aligned(ax, np.stack( (state_c, state_r)).reshape((6,-1)) ,
                  np.stack( (ref_c, reference[3:,:])).reshape((6,-1)) ,
                  fontsize = fontsize)

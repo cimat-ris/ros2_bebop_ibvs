@@ -190,7 +190,7 @@ class Controller(FeatureMatcher):
             "kw" : self.kw,
             "k_int" : self.k_int,
             "gain_takeoff" : self.gain_takeoff,
-            "K" : self.K,
+            "K" : self.K.ravel().tolist(),
             "L" : self.L,
             "initial_cond" : self.initial_cond,
             "reperence_pose" : self.reference_pose,
