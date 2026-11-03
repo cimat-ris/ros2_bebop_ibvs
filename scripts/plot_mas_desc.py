@@ -64,8 +64,12 @@ class Ploter():
         with open(name, 'r') as file:
             _dict = yaml.safe_load(file)
 
-        self.n_agents = _dict['n_agents']
         pd = np.array(_dict['pd'])
+
+        if 'n_agents' in _dict:
+            self.n_agents = _dict['n_agents']
+        else:
+            self.n_agents = 1
 
         if 'vel_limits' in _dict:
             self.vel_limits = _dict['vel_limits']
@@ -111,6 +115,7 @@ class Ploter():
 
 
         self.error = [None] * self.n_agents
+        self.velocities = [None] * self.n_agents
         self.error_int = [None] * self.n_agents
         self.position = [None] * self.n_agents
         self.log = [None] * self.n_agents
@@ -120,13 +125,21 @@ class Ploter():
         self.joined_error =  None
         self.formation_error = None
 
-    def read_data(self, label):
+    def read_data(self, _label = None):
+
+        if _label is None:
+            sufix = ""
+            label = 0
+        else:
+            sufix = "_"+str(_label)
+            label = _label
+
 
         b_float = 4
         b_double = 8
         b_int = 8
 
-        name = os.path.join(self.directory ,f"position_{label}.dat")
+        name = os.path.join(self.directory ,f"position{sufix}.dat")
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -144,8 +157,8 @@ class Ploter():
                     position[5,:] = self.camera_angle
                 self.position[label] = position
 
-        name = os.path.join(self.directory ,f"velocities_{label}.dat")
-        self.velocities = None
+        name = os.path.join(self.directory ,f"velocities{sufix}.dat")
+        self.velocities[label] = None
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -158,10 +171,10 @@ class Ploter():
                     velocities = velocities.reshape((rows,5))
                     velocities = velocities.T
                     velocities[0,:] -= velocities[0,0]
-                self.velocities = velocities
+                self.velocities[label] = velocities
 
         self.velocities_log = [None, None]
-        name = os.path.join(self.directory ,f"log_vel_prop_{label}.dat")
+        name = os.path.join(self.directory ,f"log_vel_prop{sufix}.dat")
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -175,7 +188,7 @@ class Ploter():
                     log = log.T
                     log[0,:] -= log[0,0]
                 self.velocities_log[0] = log
-        name = os.path.join(self.directory ,f"log_vel_int_{label}.dat")
+        name = os.path.join(self.directory ,f"log_vel_int{sufix}.dat")
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -191,7 +204,7 @@ class Ploter():
                 self.velocities_log[1] = log
 
 
-        name = os.path.join(self.directory ,f"norm_error_{label}.dat")
+        name = os.path.join(self.directory ,f"norm_error{sufix}.dat")
         self.n_e = None
         if os.path.exists(name):
             length = os.path.getsize(name)
@@ -209,7 +222,7 @@ class Ploter():
                     n_e = {'t': n_e[0,:], 'v': n_e[1:,:].T}
                 self.n_e = n_e
 
-        name = os.path.join(self.directory, f"{self.point_type}_{label}.dat")
+        name = os.path.join(self.directory, f"{self.point_type}{sufix}.dat")
         self.features = None
         if os.path.exists(name):
             length = os.path.getsize(name)
@@ -260,7 +273,7 @@ class Ploter():
         all_idx = set()
         for k in range(self.n_agents):
             if k != label:
-                name = os.path.join(self.directory ,f"error_{label}_{k}.dat")
+                name = os.path.join(self.directory ,f"error{sufix}_{k}.dat")
 
                 if os.path.exists(name):
                     length = os.path.getsize(name)
@@ -305,7 +318,7 @@ class Ploter():
                         self.error[label][k] = error
 
         t0 = None # Used for integral time phasing
-        name = os.path.join(self.directory ,f"error_{label}.dat")
+        name = os.path.join(self.directory ,f"error{sufix}.dat")
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -386,7 +399,7 @@ class Ploter():
         all_idx = set()
         for k in range(self.n_agents):
             if k != label:
-                name = os.path.join(self.directory ,f"error_int_{label}_{k}.dat")
+                name = os.path.join(self.directory ,f"error_int{sufix}_{k}.dat")
 
                 if os.path.exists(name):
                     length = os.path.getsize(name)
@@ -429,7 +442,7 @@ class Ploter():
                         self.error_int[label][k] = error_int
 
         t0 = None # Used for integral time phasing
-        name = os.path.join(self.directory ,f"error_int_{label}.dat")
+        name = os.path.join(self.directory ,f"error_int{sufix}.dat")
         if os.path.exists(name):
             length = os.path.getsize(name)
             if length > 0:
@@ -506,7 +519,7 @@ class Ploter():
             self.error_int[label][label] = {'t': [_t-t0 for _t in t], 'v': new_error}
 
 
-        name = os.path.join(self.directory ,f"log_{label}.dat")
+        name = os.path.join(self.directory ,f"log{sufix}.dat")
         self.log[label] = [None]*self.n_agents
         for k in range(self.n_agents):
             if k != label:
@@ -539,9 +552,9 @@ class Ploter():
             print("Ploting Error Norm")
             # plotNErr(self.directory, n_e, f"Error{sufx}.pdf")
             plotTime(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.)
-        if not self.velocities is None:
+        if not self.velocities[i] is None:
             print("Ploting Velocities ")
-            plotVel(self.directory, self.velocities,
+            plotVel(self.directory, self.velocities[i],
                     f"Velocities{sufx}.pdf",
                     lims = self.vel_limits)
         if not self.velocities_log[0] is None:
@@ -681,18 +694,54 @@ class Ploter():
 
         if not self.joined_error is None:
             print("Ploting Joined Error")
-            plotTime(self.directory, self.joined_error, f"Error_joined.pdf")
+            plotTime(self.directory,
+                     self.joined_error,
+                     f"Error_joined.pdf")
 
         name = os.path.join(self.directory,'Error_final.pdf')
         self.plot_error_state( name = name)
         # formation_error = self.get_formation_error(name)
         if not self.formation_error is None:
             print("Ploting Joined Error")
-            plotTime(self.directory, self.formation_error, f"Formation_error.pdf", th = 0.0)
+            plotTime(self.directory,
+                     self.formation_error,
+                     f"Formation_error.pdf",
+                     th = 0.0)
 
         if not any([( i is None) for i in self.position]):
             print("Ploting 3D")
-            plot3D(self.directory, self.position, self.pd, f"3DPlot.pdf")
+            plot3D(self.directory,
+                   self.position,
+                   self.pd,
+                   f"3DPlot.pdf")
+
+    def plot_article(self):
+
+        figsize = (5,4)
+
+        name = os.path.join(self.directory,'Error_final.pdf')
+        self.plot_error_state( name = name)
+
+        if not self.formation_error is None:
+            print("Ploting Joined Error")
+            plotTime(self.directory,
+                     self.formation_error,
+                     f"Formation_error_art.pdf",
+                     color_offset = 1,
+                     labels = ["Translation","Rotation"],
+                     figsize = figsize,
+                     th = 0.0)
+
+        if not self.velocities is None:
+            print("Ploting Velocities ")
+            plotJoinedVel(self.directory,
+                          self.velocities,
+                        f"Velocities_art.pdf",
+                        figsize = figsize,
+                        color_offset = 1,
+                        lims = (-.06, .06))
+
+
 
 #   AUXILIARY FUNCTIONS
 
@@ -855,7 +904,7 @@ def error_state_6(reference,
     matplotlib.rcParams["mathtext.fontset"] = 'cm'
     fig = plt.figure()
     ax = plt.axes(projection='3d')
-    ax.view_init(elev=30, azim=165)
+    ax.view_init(elev=45, azim=45)
     ax.set_xlim(-1.1,1.1)
     ax.set_ylim(-1.1,1.1)
     ax.set_zlim(-1.1,1.1)
@@ -990,6 +1039,29 @@ def plotVel(directory, data, name, lims = [-1.1,1.1]):
     plt.savefig(name,bbox_inches='tight')
     plt.close()
 
+def plotJoinedVel(directory, data, name,
+                  figsize = (5,5) ,
+                  color_offset = 0,
+                  lims = [-1.1,1.1]):
+
+    fig_v, ax_v = plt.subplots(nrows = 1, figsize=figsize)
+
+    for k in data:
+        time = k[0,:]
+        velocities = k[1:,:]
+        symbols = plot_time(ax_v, time, velocities,
+                            color_offset = color_offset)
+
+    labels = ["X","Y","Z","Yaw"]
+    # fig_v.suptitle("Velocities")
+    ax_v.legend(symbols,labels, loc=1)
+    ax_v.set_ylim(lims)
+
+    # plt.show()
+    name = os.path.join(directory ,name)
+    plt.savefig(name,bbox_inches='tight')
+    plt.close()
+
 
 # def plotNErr(directory, data, name):
 #
@@ -1011,26 +1083,33 @@ def plotTime(directory,
               data,
               name,
               th = 0.,
-              title = "Error",
+              color_offset = 0,
+              figsize = (6,2),
+              title = "",
+              labels = [],
               lims = None):
 
-    fig, ax = plt.subplots( figsize=(6,2))
-    fig.suptitle(title)
+    fig, ax = plt.subplots( figsize=figsize)
+    if len(title) > 0:
+        fig.suptitle(title)
 
     if "t" in data :
         time = np.array(data["t"])
         _error = np.array(data["v"].T).copy()
-        plot_time(ax, time, _error, th)
+        symbols = plot_time(ax, time, _error, th, color_offset = color_offset)
     else:
-        offset = 0
+        offset = color_offset
         for k in data:
             # print(_dict)
             time = np.array(data[k]["t"])
             _error = np.array(data[k]["v"].T).copy()
-            plot_time(ax,
+            symbols = plot_time(ax,
                         time,_error,
                         th, color_offset = offset )
             offset += _error.shape[0]
+
+    if len(labels) > 0:
+        ax.legend(symbols,labels, loc=1)
 
     if not lims is None:
         ax.set_ylim(lims)
@@ -1193,6 +1272,7 @@ def main(arg):
         ploter.plot_single(i)
     ploter.proc_joined()
     ploter.plot_joined()
+    # ploter.plot_article()
 
 
 
