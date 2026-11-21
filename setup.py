@@ -36,6 +36,7 @@ setup(
             "ibvs_real = ros2_bebop_ibvs.ibvs_real:main",
             "hbvs_sim = ros2_bebop_ibvs.hbvs_sim:main",
             "hbvs_real = ros2_bebop_ibvs.hbvs_real:main",
+            "single_ibvs_direct_tracking_sim = ros2_bebop_ibvs.single_ibvs_direct_tracking_sim:main",
             "sim_control = ros2_bebop_ibvs.sim_control:main",
             "mas_ibvs_direct_tracking_sim = ros2_bebop_ibvs.mas_ibvs_direct_tracking_sim:main",
             "mas_ibvs_direct_matching_sim = ros2_bebop_ibvs.mas_ibvs_direct_matching_sim:main",

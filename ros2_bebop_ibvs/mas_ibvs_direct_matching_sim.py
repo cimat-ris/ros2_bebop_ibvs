@@ -60,7 +60,7 @@ class Controller(FeatureMatcher):
 
         #   Publishers
         qos = QoSProfile(depth=2)
-        self.create_publishers(qos)
+        self.create_publishers(qos, f"{self.robot_name}_{self.label}")
 
 
         if enable_IBVS:

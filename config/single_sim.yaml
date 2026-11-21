@@ -16,14 +16,15 @@ pd: [0., 0., 2., 0] #   ground_reference.png
 
 
 # Simulation
-frequency: 30.
+frequency: 20.
 save_log: false
-output: /home/axolomancer/workspaces/ibvs-formation/src/ros2_bebop_ibvs/output
+output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
 
 #   Control
-control: "ibvs_sim"
+control: "single_ibvs_direct_tracking_sim"
+# control: "ibvs_sim"
 gain: .08
-gain_w: 1.
+gain_w: .1
 img_depth: 2.
 polar: false
 
@@ -37,7 +38,6 @@ polar: false
 world: "ground.world"
 # imageProc: "tracking"
 # imageProc: "matching"
-
 nfeatures: 100
 scaleFactor: 1.2
 nlevels: 8

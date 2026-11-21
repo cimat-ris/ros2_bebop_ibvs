@@ -17,10 +17,11 @@ def generate_launch_description():
 
 
     #   Proc argument
-    yaml_control = os.path.join(pkg_bebop_ibvs,"config", "control_single_sim.yaml")
+    yaml_control = os.path.join(pkg_bebop_ibvs,"config", "single_sim.yaml")
     with open(yaml_control, 'r') as file:
         config = yaml.safe_load(file)
-
+    config['use_sim_time'] = True
+    config['black_frame'] = os.path.join(pkg_bebop_ibvs, 'config', 'black_frame.png')
 
     #  Launch Gazebo
     gz_sim = IncludeLaunchDescription(

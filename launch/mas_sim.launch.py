@@ -13,12 +13,6 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_bebop_ibvs = get_package_share_directory('ros2_bebop_ibvs')
 
-    #   Load bebop model
-    bebop_model = os.path.join(pkg_bebop_ibvs,"models","parrot_bebop_2_custom","model.sdf")
-    with open(bebop_model, "r") as infp:
-        robot_desc = infp.read()
-    rd_template = Template(robot_desc) # convert string in template
-
     #   Configurations
     yaml_control = os.path.join(pkg_bebop_ibvs, 'config', 'mas_sim.yaml')
     with open(yaml_control, 'r') as file:
@@ -31,6 +25,11 @@ def generate_launch_description():
         print(f"Output directory  {config["output"]} does not exists")
         return
     copy2(yaml_control, os.path.join(config["output"], "params.yaml"))
+
+    #   Load bebop model
+    bebop_model = os.path.join(pkg_bebop_ibvs,"models",config["model"],"model.sdf")
+    with open(bebop_model, "r") as infp:
+            robot_desc = infp.read()
 
     # Bridge config
     bridge_config = os.path.join(pkg_bebop_ibvs, 'config', 'bebopN.yaml')

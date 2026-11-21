@@ -164,19 +164,19 @@ class State(Node):
         self.u = np.zeros(6)
 
     #   Initial configuration before loop
-    def create_publishers(self, qos):
+    def create_publishers(self, qos, name):
         self.cmd_pub = self.create_publisher(Twist,
-                                             f"/{self.robot_name}_{self.label}/cmd_vel",
+                                             f"/{name}/cmd_vel",
                                              qos)
 
-        print(f"/{self.robot_name}_{self.label}/cmd_vel" )
+        print(f"/{name}/cmd_vel" )
         self.cmd_enable = self.create_publisher(Bool,
-                                                f"/{self.robot_name}_{self.label}/enable",
+                                                f"/{name}/enable",
                                                 qos)
 
         #   Subscriptions
         self.pos_sub = self.create_subscription(Pose,
-                                                f"/{self.robot_name}_{self.label}/pose",
+                                                f"/{name}/pose",
                                                 self.pos_changed,
                                                 qos)
     def pos_changed(self, msg):
@@ -906,6 +906,8 @@ class FeatureTracker(ImageProc):
         self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
         if self.desc_ref is None:
             return False
+        _p = np.float32([k.pt for k in self.kp_ref  ])
+        self.ref_points = self.normalize(_p.astype(float).T)
 
         return True
 
@@ -1007,6 +1009,62 @@ class FeatureTracker(ImageProc):
 
         # super().get_logger().info(f"mtches {_mask.sum()}")
         return _delta_i, _delta_j, _idx
+
+    def match_ref(self, enable_ransac = True):
+
+        #   match
+        knn_matches = self.flann.knnMatch(self.desc_ref,
+                                self.desc_self, k=2)
+
+        # Lowe ratio test
+        good_matches = []
+        for matches in knn_matches:
+            if len(matches) == 2:
+                m, n = matches
+                if m.distance < self.flann_ratio * n.distance:
+                    good_matches.append(m)
+
+        if len(good_matches) <= self.matcher_threshold:
+            _s = f"No Neighboring Matches available ({len(good_matches)} of {self.desc_ref.shape})"
+            super().get_logger().warning(_s)
+            return None
+
+        idx = [m.trainIdx for m in good_matches]
+
+        p = np.float32([
+            self.points[:,m.trainIdx]
+            for m in good_matches
+        ])
+        p_ref = np.float32([
+            self.ref_points[:,m.queryIdx]
+            for m in good_matches
+        ])
+
+        if not enable_ransac:
+            return p, p_ref, idx
+
+        #   RANSAC FILTER
+        _, _mask = cv2.findHomography(p,
+                                      p_ref,
+                                      cv2.RANSAC)
+        _mask = _mask.reshape(-1)
+
+        if _mask.sum() <= self.matcher_threshold:
+            super().get_logger().warning("No Neighboring Matches available (RANSAC)")
+            return None
+
+        p = p[_mask == 1,:].T
+        p_ref = p_ref[_mask == 1,:].T
+        p = p.reshape((2,-1))
+        p_ref = p_ref.reshape((2,-1))
+
+        _idx = []
+        for i, m in zip(idx, _mask):
+            if m==1:
+                _idx.append(i)
+
+        # super().get_logger().info(f"mtches {_mask.sum()}")
+        return p, p_ref, _idx
 
     def img_proc(self, image):
 
