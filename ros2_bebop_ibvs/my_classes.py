@@ -913,46 +913,6 @@ class FeatureTracker(ImageProc):
 
 
 
-    # def match(self, desc, deltas):
-    #
-    #     #   match
-    #     knn_matches = self.flann.knnMatch(desc,
-    #                             self.desc_self, k=2)
-    #     # Lowe ratio test
-    #     good_matches = []
-    #     for matches in knn_matches:
-    #         if len(matches) == 2:
-    #             m, n = matches
-    #             if m.distance < self.flann_ratio * n.distance:
-    #                 good_matches.append(m)
-    #
-    #     if len(good_matches) <= self.matcher_threshold:
-    #         super().get_logger().warning(f"No Neighboring Matches available ({len(good_matches)} of {desc.shape})")
-    #         return None
-    #
-    #     _delta_i = np.float32([
-    #         self.points[:,m.trainIdx]
-    #         for m in good_matches
-    #     ])
-    #     _delta_j = np.float32([
-    #         deltas[:,m.queryIdx]
-    #         for m in good_matches
-    #     ])
-    #
-    #
-    #     _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
-    #     _mask = _mask.reshape(-1)
-    #
-    #     if _mask.sum() <= self.matcher_threshold:
-    #         super().get_logger().warning("No Neighboring Matches available (RANSAC)")
-    #         return None
-    #
-    #     _delta_i = _delta_i[_mask == 1,:].T
-    #     _delta_j = _delta_j[_mask == 1,:].T
-    #     _delta_i = _delta_i.reshape((2,-1))
-    #     _delta_j = _delta_j.reshape((2,-1))
-    #
-    #     return _delta_i, _delta_j
 
     def match(self, desc, deltas, enable_ransac = True):
 
@@ -988,8 +948,8 @@ class FeatureTracker(ImageProc):
             return _delta_i, _delta_j, idx
 
         #   RANSAC FILTER
-        _, _mask = cv2.findHomography(_delta_i,
-                                      _delta_j,
+        _, _mask = cv2.findHomography(10.*_delta_i,
+                                      10.*_delta_j,
                                       cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
@@ -1044,8 +1004,8 @@ class FeatureTracker(ImageProc):
             return p, p_ref, idx
 
         #   RANSAC FILTER
-        _, _mask = cv2.findHomography(p,
-                                      p_ref,
+        _, _mask = cv2.findHomography(10.*p,
+                                      10.*p_ref,
                                       cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
@@ -1219,7 +1179,7 @@ class FeatureMatcher(ImageProc):
         if not enable_ransac:
             return _delta_i, _delta_j, idx
 
-        _, _mask = cv2.findHomography(_delta_i, _delta_j, cv2.RANSAC)
+        _, _mask = cv2.findHomography(10.*_delta_i,10.* _delta_j, cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
         if _mask.sum() <= 4:

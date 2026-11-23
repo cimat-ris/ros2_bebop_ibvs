@@ -125,15 +125,11 @@ class Ploter():
         self.joined_error =  None
         self.formation_error = None
 
-    def read_data(self, _label = None):
+    def read_data(self, label = 0):
 
-        if _label is None:
-            sufix = ""
+        sufix = "" if self.n_agents == 1 else "_"+str(label)
+        if label is None:
             label = 0
-        else:
-            sufix = "_"+str(_label)
-            label = _label
-
 
         b_float = 4
         b_double = 8
@@ -541,7 +537,7 @@ class Ploter():
 
     def plot_single(self, i = None ):
 
-        sufx = "" if i is None else "_"+str(i)
+        sufix = "" if self.n_agents == 1 else "_"+str(i)
 
         if not i is None:
             print(f"\tPloting Agent {i}")
@@ -550,28 +546,28 @@ class Ploter():
 
         if not self.n_e is None:
             print("Ploting Error Norm")
-            # plotNErr(self.directory, n_e, f"Error{sufx}.pdf")
-            plotTime(self.directory, self.n_e, f"Error{sufx}.pdf", th = 0.)
+            # plotNErr(self.directory, n_e, f"Error{sufix}.pdf")
+            plotTime(self.directory, self.n_e, f"Error{sufix}.pdf", th = 0.)
         if not self.velocities[i] is None:
             print("Ploting Velocities ")
             plotVel(self.directory, self.velocities[i],
-                    f"Velocities{sufx}.pdf",
+                    f"Velocities{sufix}.pdf",
                     lims = self.vel_limits)
         if not self.velocities_log[0] is None:
             print("Ploting Velocities (Log Proportional) ")
             plotVel(self.directory, self.velocities_log[0],
-                    f"Velocities_prop{sufx}.pdf",
+                    f"Velocities_prop{sufix}.pdf",
                     lims = self.vel_limits)
         if not self.velocities_log[1] is None:
             print("Ploting Velocities Log Integral ")
-            plotVel(self.directory, self.velocities_log[1], f"Velocities_int{sufx}.pdf")
+            plotVel(self.directory, self.velocities_log[1], f"Velocities_int{sufix}.pdf")
 
         if not self.features is None:
             print("Ploting Features")
             plotFeat(self.directory,  self.features,
-                     f"Features{sufx}.pdf")
+                     f"Features{sufix}.pdf")
             plotTime(self.directory,  self.features,
-                     f"Time_features{sufx}.pdf",
+                     f"Time_features{sufix}.pdf",
                      title = "Features")
 
 
@@ -579,38 +575,38 @@ class Ploter():
             print("Ploting Error")
             plotTime(self.directory,
                       self.error[i][i],
-                      f"Error_feature{sufx}.pdf",
+                      f"Error_feature{sufix}.pdf",
                       lims = self.error_limits)
             for j in range(self.n_agents):
                 if j != i and not self.error[i][j] is None:
                     # print(self.error[i][j])
                     plotTime(self.directory,
                             self.error[i][j],
-                            f"Error_feature{sufx}_{j}.pdf",
+                            f"Error_feature{sufix}_{j}.pdf",
                             lims = self.error_limits)
 
         if not self.error_int[i][i] is None:
             print("Ploting Integral Error")
             plotTime(self.directory,
                       self.error_int[i][i],
-                      f"Error_integral{sufx}.pdf",
+                      f"Error_integral{sufix}.pdf",
                       lims = self.error_int_limits)
             for j in range(self.n_agents):
                 if j != i and not self.error_int[i][j] is None:
                     # print(self.error_int[i][j])
                     plotTime(self.directory,
                             self.error_int[i][j],
-                            f"Error_integral{sufx}_{j}.pdf",
+                            f"Error_integral{sufix}_{j}.pdf",
                             lims = self.error_int_limits)
             # print(error[i])
         if not self.position[i] is None:
             print("Ploting pose graphics")
-            plotPosition(self.directory, self.position[i][[0,1,2,3,6],:], f"State{sufx}.pdf")
+            plotPosition(self.directory, self.position[i][[0,1,2,3,6],:], f"State{sufix}.pdf")
 
         for j in range(self.n_agents):
             if not self.log[i][j] is None:
                 print("Ploting Log")
-                plotLog(self.directory, self.log[j], f"LOG_SVD_D{sufx}_{j}.pdf")
+                plotLog(self.directory, self.log[j], f"LOG_SVD_D{sufix}_{j}.pdf")
 
     #   Only for arucos
     #   TODO: Adapt
@@ -684,6 +680,9 @@ class Ploter():
 
     def proc_joined(self):
 
+        if self.n_agents == 1:
+            return
+
         if any([not x is None for x in self.arucos]):
             # this is possioble only with arucos or virtual
             self.join_error()
@@ -691,6 +690,9 @@ class Ploter():
         self.get_formation_error()
 
     def plot_joined(self):
+
+        if self.n_agents == 1:
+            return
 
         if not self.joined_error is None:
             print("Ploting Joined Error")
@@ -1280,7 +1282,7 @@ def main(arg):
 
 if __name__ ==  "__main__":
     description = "Plotting multiple agent experiment data"
-    parser = argparse.ArgumentParser(prog = 'python3 plot_mas_desc.py',
+    parser = argparse.ArgumentParser(prog = 'python3 plot.py',
                                      description = description)
     parser.add_argument( 'directory', type=str, default = 'output',
         help = "Directory name (default output/)")
