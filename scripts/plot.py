@@ -4,7 +4,6 @@ import numpy as np
 from numpy import pi, arctan2
 from numpy.linalg import norm, svd
 from scipy.optimize import minimize_scalar
-import cv2
 
 #   Plot
 import matplotlib.lines as mlines
@@ -25,29 +24,6 @@ import yaml
 from camera import Camera
 from my_math import rotation_matrix_euler, get_angles
 
-
-markers_list = ["4X4_50" ,
-        "4X4_100" ,
-        "4X4_250" ,
-        "4X4_1000" ,
-        "5X5_50" ,
-        "5X5_100" ,
-        "5X5_250" ,
-        "5X5_1000" ,
-        "6X6_50" ,
-        "6X6_100" ,
-        "6X6_250" ,
-        "6X6_1000" ,
-        "7X7_50" ,
-        "7X7_100" ,
-        "7X7_250" ,
-        "7X7_1000" ,
-        "ARUCO_ORIGINAL" ,
-        "APRILTAG_16h5" ,
-        "APRILTAG_25h9" ,
-        "APRILTAG_36h10" ,
-        "APRILTAG_36h11" ,
-        "ARUCO_MIP_36h12"]
 
 
 class Ploter():
@@ -70,6 +46,21 @@ class Ploter():
             self.n_agents = _dict['n_agents']
         else:
             self.n_agents = 1
+
+        if 'ref_prefix' in _dict:
+            self.ref_prefix = _dict['ref_prefix']
+        else:
+            self.ref_prefix = None
+
+        if 'ref_image' in _dict:
+            self.ref_image = _dict['ref_image']
+        else:
+            self.ref_image = None
+
+        if 'use_reference' in _dict:
+            self.use_reference = _dict['use_reference']
+        else:
+            self.use_reference = False
 
         if 'vel_limits' in _dict:
             self.vel_limits = _dict['vel_limits']
@@ -101,8 +92,16 @@ class Ploter():
             self.point_count = 2
         if self.point_type == "arucos":
             self.point_count = 8
+            if self.use_reference:
+                aruco_dict =  _dict['aruco_dictionary']
+                self.markers = markers_list.index(aruco_dict)
         if self.point_type == "virtual":
             self.point_count = int(2*len(_dict['points3D'])/3)
+            if self.use_reference:
+                self.points3D = _dict["points3D"]
+                self.camR = _dict["CamR"]
+                self.camT = _dict["CamT"]
+                self.K = _dict["K"]
 
         pd = pd.reshape((-1,4))
         n = pd.shape[0]
@@ -120,16 +119,22 @@ class Ploter():
         self.position = [None] * self.n_agents
         self.log = [None] * self.n_agents
 
+        self.reference = None
         self.arucos = [None] * self.n_agents
 
         self.joined_error =  None
         self.formation_error = None
+
+
+
 
     def read_data(self, label = 0):
 
         sufix = "" if self.n_agents == 1 else "_"+str(label)
         if label is None:
             label = 0
+
+
 
         b_float = 4
         b_double = 8
@@ -152,6 +157,22 @@ class Ploter():
                     position[0,:] -= position[0,0]
                     position[5,:] = self.camera_angle
                 self.position[label] = position
+
+
+        if self.use_reference:
+            name = os.path.join(self.directory ,f"reference{sufix}.dat")
+            if os.path.exists(name):
+                length = os.path.getsize(name)
+                if length > 0:
+                    with open(name, 'rb') as fileH:
+                        rows = (length) / (2* b_double)
+                        rows = int(np.floor(rows))
+                        reference = np.fromfile(fileH,
+                                                dtype = np.float64,
+                                                count = 2*rows)
+                        reference = reference.reshape((rows,2))
+                        reference = reference.T
+                    self.reference = reference
 
         name = os.path.join(self.directory ,f"velocities{sufix}.dat")
         self.velocities[label] = None
@@ -565,7 +586,7 @@ class Ploter():
         if not self.features is None:
             print("Ploting Features")
             plotFeat(self.directory,  self.features,
-                     f"Features{sufix}.pdf")
+                     f"Features{sufix}.pdf", self.reference)
             plotTime(self.directory,  self.features,
                      f"Time_features{sufix}.pdf",
                      title = "Features")
@@ -747,26 +768,6 @@ class Ploter():
 
 #   AUXILIARY FUNCTIONS
 
-def get_reference(image_name,
-                  markers = cv2.aruco.DICT_APRILTAG_36h11,
-                  out_directory = '',
-                  label = 0):
-    image = cv2.imread(f"{image_name}_{label}.png")
-    arucos = None
-
-    arucoDict = cv2.aruco.getPredefinedDictionary(markers)
-    detectorParams = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(arucoDict, detectorParams)
-    (corners, ids, rejected) = detector.detectMarkers(image)
-
-    print("Detected markers:", ids)
-    if ids is not None:
-        cv2.aruco.drawDetectedMarkers(image, corners, ids)
-        cv2.imwrite(os.path.join(out_directory,f"ref_arucos_{label}.png"), image)
-
-        ids = [k[0] for k in ids ]
-
-    return ids, corners
 
 def plot_descriptors_simple(ax,
                             descriptors_array,
@@ -806,25 +807,6 @@ def plot_descriptors_simple(ax,
     return
 
 #   TODO: my math py
-
-def rotation_matrix(ang,ax):
-
-    ca = np.cos(ang)
-    sa = np.sin(ang)
-    if ax == 'x':
-        return np.array([[1.0, 0.0, 0.0],
-                        [0.0,  ca, -sa],
-                        [0.0,  sa,  ca]])
-    elif ax == 'y':
-        return np.array([[ ca, 0.0,  sa],
-                        [0.0, 1.0, 0.0],
-                        [-sa, 0.0,  ca]])
-    elif ax == 'z':
-        return np.array([[ ca, -sa, 0.0],
-                        [ sa,  ca, 0.0],
-                        [0.0, 0.0, 1.0]])
-
-    return None
 
 
 def error_state_6(reference,
@@ -877,16 +859,6 @@ def error_state_6(reference,
         _R = R.T @ agents[i].R
         state_r[:,i] = get_angles(_R)
         _R = rotation_matrix_euler(reference[3:,i]).T @ _R
-        #agents[i].pose(new_state[:,i])
-
-        # print("<R")
-
-        #   Get error
-        #_R =  cm.rot(new_reference[3,i],'x') @ agents[i].R.T
-        #_R = cm.rot(new_reference[4,i],'y') @ _R
-        #_R = cm.rot(new_reference[5,i],'z') @ _R
-        #_R = rotation_matrix_euler(reference[:,i]).T
-        #_R = rotation_matrix_euler(state_r[:,i]).T @ _R
 
         _arg = (_R.trace()-1.)/2.
         if abs(_arg) < 1.:
@@ -1120,26 +1092,29 @@ def plotTime(directory,
     plt.close()
 
 
-def plotFeat(directory, features, name): #, reference):
+def plotFeat(directory, features, name, ref = None): #, reference):
 
     camera_iMsize = [856,480]
     fig, ax = plt.subplots()
     fig.suptitle("Features")
     for i, v in features.items():
-        # if i in reference[0]:
-        #     k = reference[0].index(i)
-            # s_ref = reference[1][k].reshape(8)
-        # points = np.array(v["v"]).reshape((2,-1))
-        symbols = plot_descriptors_simple(ax,
+        plot_descriptors_simple(ax,
                             np.array(v["v"].T),
                             # s_ref,
                         camera_iMsize,
                         enableLims = True)
-    labels = ["Start","End","Reference","trajectory"]
+    labels = ["Start","End","trajectory"]
     symbols = [mlines.Line2D([0],[0],marker='*',color='k'),
                mlines.Line2D([0],[0],marker='o',color='k'),
-               mlines.Line2D([0],[0],marker='^',color='k'),
                mlines.Line2D([0],[0],linestyle='-',color='k')]
+    if not ref is None:
+        labels += ["Reference"]
+        symbols += [mlines.Line2D([0],[0],marker='^',color='k')]
+
+        ax.plot(ref[0],ref[1],'^',
+                markerfacecolor="none",
+              markeredgecolor='black',)
+
     fig.legend(symbols,labels, loc=1)
     plt.gca().invert_yaxis()
     plt.tight_layout()

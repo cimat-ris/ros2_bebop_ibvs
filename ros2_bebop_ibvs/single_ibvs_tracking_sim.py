@@ -69,6 +69,14 @@ class Controller( FeatureTracker):
             #   Config data storage
             self.config_data_storage()
 
+            #   Save reference data
+            fileName = os.path.join(self.output, f"reference.dat")
+            with open(fileName, 'wb') as file:
+
+                data = tuple(self.plot_ref_points.reshape(-1))
+                binary = struct.pack('d'*len(data), *data)
+                file.write(binary)
+
             #   Image bridge
             img_qos = QoSProfile(depth=2)
             self.bridge = CvBridge()

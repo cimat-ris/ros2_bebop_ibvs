@@ -10,7 +10,7 @@ CamR: [0.,-1., 0.,
 CamT: [0., 0., -0.05]
 
 #   Conditions
-p0: [1., 1., 2., 0] #   Only translation
+p0: [1., 1., 2., 0.3] #   Only translation
 pd: [0., 0., 2., 0] #   ground_reference.png
 
 
@@ -21,10 +21,10 @@ save_log: false
 output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
 
 #   Control
-control: "single_ibvs_direct_tracking_sim"
+control: "single_ibvs_tracking_sim"
 # control: "ibvs_sim"
-gain: .8
-gain_w: .1
+gain: 1.2
+gain_w: 1.
 img_depth: 2.
 polar: false
 
@@ -79,4 +79,4 @@ error_limits: [-1, 1]
 error_int_limits: [-5, 5]
 camera_angle: pi
 
-
+use_reference: True

@@ -906,8 +906,8 @@ class FeatureTracker(ImageProc):
         self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
         if self.desc_ref is None:
             return False
-        _p = np.float32([k.pt for k in self.kp_ref  ])
-        self.ref_points = self.normalize(_p.astype(float).T)
+        self.plot_ref_points = np.float32([k.pt for k in self.kp_ref  ])
+        self.ref_points = self.normalize(self.plot_ref_points.astype(float).T)
 
         return True
 
