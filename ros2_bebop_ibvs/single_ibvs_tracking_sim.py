@@ -73,7 +73,7 @@ class Controller( FeatureTracker):
             fileName = os.path.join(self.output, f"reference.dat")
             with open(fileName, 'wb') as file:
 
-                data = tuple(self.plot_ref_points.reshape(-1))
+                data = tuple(self.ref_points_px.reshape(-1))
                 binary = struct.pack('d'*len(data), *data)
                 file.write(binary)
 
@@ -557,6 +557,7 @@ class Controller( FeatureTracker):
                 self.save_data()
         else:
             self.control_()
+            # self.u[0] += .00193865545
 
             self.norm = np.linalg.norm(self.error)/ float(self.error.shape[0])
 
@@ -564,6 +565,7 @@ class Controller( FeatureTracker):
             self.error_counter += 1
             if self.error_counter >= self.error_counter_th:
                 self.get_logger().info(str(self.norm))
+                self.get_logger().info(str(self.u.flatten()))
                 self.error_counter = 0
             self.data2save = True
             self.save_data()

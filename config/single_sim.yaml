@@ -13,17 +13,19 @@ CamT: [0., 0., -0.05]
 p0: [1., 1., 2., 0.3] #   Only translation
 pd: [0., 0., 2., 0] #   ground_reference.png
 
-
+# v_offset: [0.00193865545,  0., 0.]
+# v_offset: [0.00213865545,  0., 0.]
+v_offset: [0.0026,  -0.0001, 0.]
 
 # Simulation
-frequency: 20.
+frequency: 30.
 save_log: false
 output: /home/bloodfield/ros-rolling/Workspaces/bebop/src/ros2_bebop_ibvs/output
 
 #   Control
 control: "single_ibvs_tracking_sim"
 # control: "ibvs_sim"
-gain: 1.2
+gain: 1.5
 gain_w: 1.
 img_depth: 2.
 polar: false

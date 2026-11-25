@@ -143,6 +143,7 @@ class State(Node):
         self.new_state = IDLE
         self.current_pose = Pose()
         self.m_vel = Twist()
+        self.m_offset = Twist()
         self.takeoff_complete = False
         # self.reset_tracking = False
         self.state_m = self.s_idle
@@ -154,12 +155,17 @@ class State(Node):
         super().declare_parameter('takeoff_threshold', 0.04)
         super().declare_parameter('landing_threshold', 0.08)
         super().declare_parameter('takeoff_height', 1.0)
-        super().declare_parameter('gain_takeoff', 1.)
+        super().declare_parameter('gain_takeoff', .5)
+        super().declare_parameter('v_offset', [0., 0., 0.])
 
         self.takeoff_threshold = super().get_parameter('takeoff_threshold').value
         self.landing_threshold = super().get_parameter('landing_threshold').value
         self.takeoff_height = super().get_parameter('takeoff_height').value
         self.gain_takeoff = super().get_parameter('gain_takeoff').value
+        m_offset = super().get_parameter('v_offset').value
+        self.m_offset.linear.x = m_offset[0]
+        self.m_offset.linear.y = m_offset[1]
+        self.m_offset.linear.z = m_offset[2]
 
         self.u = np.zeros(6)
 
@@ -235,6 +241,10 @@ class State(Node):
 
         msg = Twist()
         msg.linear.z = -self.gain_takeoff*float(delta)
+
+        msg.linear.x += self.m_offset.linear.x
+        msg.linear.y += self.m_offset.linear.y
+        msg.linear.z += self.m_offset.linear.z
         self.cmd_pub.publish(msg)
 
         self.get_logger().debug(f"Control input: {msg.linear.z}")
@@ -312,6 +322,11 @@ class State(Node):
         msg.linear.y = float(_u[1])
         msg.linear.z = float(_u[2])
         msg.angular.z = float(-self.gain_takeoff* _yaw)
+
+        msg.linear.x += self.m_offset.linear.x
+        msg.linear.y += self.m_offset.linear.y
+        msg.linear.z += self.m_offset.linear.z
+
         self.cmd_pub.publish(msg)
 
         self.get_logger().debug(f"Control input: {_u}")
@@ -383,6 +398,11 @@ class State(Node):
         msg.linear.y = float(_u[1])
         msg.linear.z = float(_u[2])
         msg.angular.z = float(-self.gain_takeoff* _yaw)
+
+        msg.linear.x += self.m_offset.linear.x
+        msg.linear.y += self.m_offset.linear.y
+        msg.linear.z += self.m_offset.linear.z
+
         self.cmd_pub.publish(msg)
 
         self.get_logger().debug(f"Control input: {_u}")
@@ -429,6 +449,11 @@ class State(Node):
 
         # Descender controladamente
         msg.linear.z = self.gain_takeoff* float(- current_z)
+
+        msg.linear.x += self.m_offset.linear.x
+        msg.linear.y += self.m_offset.linear.y
+        msg.linear.z += self.m_offset.linear.z
+
         self.cmd_pub.publish(msg)
 
 
@@ -437,7 +462,7 @@ class State(Node):
             self.get_logger().info("¡Landing complete!")
             self.state = self.s_idle
             self.cmd_enable.publish(Bool(data=False))
-            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(self.m_offset)
             return
         #   Change state
         if self.new_state == IDLE or  abs(current_z-.1) < self.takeoff_threshold:
@@ -464,6 +489,11 @@ class State(Node):
         self.m_vel.linear.y = float(self.u[1])
         self.m_vel.linear.z = float(self.u[2])
         self.m_vel.angular.z = float(self.u[5])
+
+        self.m_vel.linear.x += self.m_offset.linear.x
+        self.m_vel.linear.y += self.m_offset.linear.y
+        self.m_vel.linear.z += self.m_offset.linear.z
+
 
         try:
             self.cmd_pub.publish(self.m_vel)
@@ -504,7 +534,7 @@ class State(Node):
 
     def s_hold(self):
 
-        self.cmd_pub.publish(Twist())
+        self.cmd_pub.publish(self.m_offset)
 
         if self.new_state == CONTROL:
             self.get_logger().info("State change: CONTROL")
@@ -535,9 +565,9 @@ class State(Node):
             self.new_state = HOLD
 
     def s_stop(self):
-        self.cmd_pub.publish(Twist())
-        self.cmd_pub.publish(Twist())
-        self.cmd_pub.publish(Twist())
+        self.cmd_pub.publish(self.m_offset)
+        self.cmd_pub.publish(self.m_offset)
+        self.cmd_pub.publish(self.m_offset)
         self.cmd_enable.publish(Bool(data=False))
         self.get_logger().info("State change: IDLE")
         self.state = self.s_idle
@@ -906,15 +936,17 @@ class FeatureTracker(ImageProc):
         self.kp_ref, self.desc_ref = self.orb.detectAndCompute(gray_image, None)
         if self.desc_ref is None:
             return False
-        self.plot_ref_points = np.float32([k.pt for k in self.kp_ref  ])
-        self.ref_points = self.normalize(self.plot_ref_points.astype(float).T)
+        self.ref_points_px = np.float32([k.pt for k in self.kp_ref  ])
+        self.ref_points = self.normalize(self.ref_points_px.astype(float).T)
 
         return True
 
 
 
 
-    def match(self, desc, deltas, enable_ransac = True):
+    def match(self, desc, deltas,
+              enable_ransac = True,
+              px = None):
 
         #   match
         knn_matches = self.flann.knnMatch(desc,
@@ -947,9 +979,25 @@ class FeatureTracker(ImageProc):
         if not enable_ransac:
             return _delta_i, _delta_j, idx
 
-        #   RANSAC FILTER
-        _, _mask = cv2.findHomography(10.*_delta_i,
-                                      10.*_delta_j,
+        if px is None:
+
+            #   RANSAC FILTER
+            _, _mask = cv2.findHomography(100.*_delta_i,
+                                        100.*_delta_j,
+                                        cv2.RANSAC)
+
+        else:
+            p_px = np.float32([
+                self.p[m.trainIdx,:]
+                for m in good_matches
+            ])
+            p_ref_px = np.float32([
+                px[m.queryIdx,:]
+                for m in good_matches
+            ])
+
+            _, _mask = cv2.findHomography(p_px,
+                                      p_ref_px,
                                       cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
@@ -1003,9 +1051,17 @@ class FeatureTracker(ImageProc):
         if not enable_ransac:
             return p, p_ref, idx
 
+        p_px = np.float32([
+            self.p[m.trainIdx,:]
+            for m in good_matches
+        ])
+        p_ref_px = np.float32([
+            self.ref_points_px[m.queryIdx,:]
+            for m in good_matches
+        ])
         #   RANSAC FILTER
-        _, _mask = cv2.findHomography(10.*p,
-                                      10.*p_ref,
+        _, _mask = cv2.findHomography(p_px,
+                                      p_ref_px,
                                       cv2.RANSAC)
         _mask = _mask.reshape(-1)
 

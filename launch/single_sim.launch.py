@@ -30,7 +30,7 @@ def generate_launch_description():
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
         launch_arguments={
-            'gz_args': f"-r -z 100000 {config["world"]} ",
+            'gz_args': f"-r -z 10000 {config["world"]} ",
         'on_exit_shutdown': 'true'}.items(),
     )
 
