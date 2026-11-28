@@ -729,6 +729,7 @@ class Ploter():
             plotTime(self.directory,
                      self.formation_error,
                      f"Formation_error.pdf",
+                     color_offset = 1,
                      th = 0.0)
 
         if not any([( i is None) for i in self.position]):

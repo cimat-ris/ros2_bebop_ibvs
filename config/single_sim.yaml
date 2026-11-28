@@ -7,7 +7,7 @@ K:   [375.98849,  0.   ,428.,
 CamR: [0.,-1., 0.,
       -1., 0., 0.,
        0., 0.,-1.]
-CamT: [0., 0., -0.05]
+CamT: [0., 0., 0.05]
 
 #   Conditions
 p0: [1., 1., 2., 0.3] #   Only translation
@@ -48,7 +48,8 @@ patchSize: 30
 fastThreshold: 20
 flann_ratio: 0.7
 # flann_ratio: 0.6
-matcher_threshold: 12
+detect_threshold: 6
+matcher_threshold: 4
 ref_image: ground_reference.png
 
 

@@ -111,7 +111,9 @@ class Controller( FeatureTracker):
 
             self.get_logger().warning(f"{self.label}: Control configuration incomplete, simple control enabled")
 
-        self.timer = self.create_timer(1.0 / self.frequency, self.control_loop)
+        f = 1.0 / self.frequency
+        # self.get_logger().info(f"freq = {f}")
+        self.timer = self.create_timer(f, self.control_loop)
 
 
 
@@ -413,6 +415,12 @@ class Controller( FeatureTracker):
         if  self.cv_image is None:
             return
         self.m_image = self.cv_image.copy()
+        if not self.frame is None:
+            cv2.rectangle(self.m_image,
+                          self.frame[:2],
+                          self.frame[2:],
+                          color = (100, 0, 100),
+                          thickness = 1)
         if len(self.p) > 2:
             self.custom_draw(self.m_image, self.p.T)
 
@@ -421,6 +429,9 @@ class Controller( FeatureTracker):
 
         t = self.get_clock().now().nanoseconds * 1e-9
         self.u = lead[self.label](t)
+        if self.enable_tanh:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            self.u *= np.tanh(0.2*(t-self.t0))
 
     def control(self):
 
@@ -633,7 +644,7 @@ class Controller( FeatureTracker):
         #   Integral filter to index
         filt = [a in self.ids for a in self.ids_int]
         self.err_int = self.err_int[:,filt]
-        self.ids_int = [i for i in self.ids]
+        self.ids_int = [i  for i in self.ids]
 
         #   Control
         if self.error[self.label].shape[1] != self.err_int.shape[1]:
@@ -650,7 +661,7 @@ class Controller( FeatureTracker):
         # _u /= float(mask.sum())
         if self.enable_tanh:
             t = self.get_clock().now().nanoseconds * 1e-9
-            _u *= np.tanh(0.5*(t-self.t0))
+            _u *= np.tanh(0.2*(t-self.t0))
 
         #   Integration step
         self.tick = self.tock
@@ -711,7 +722,7 @@ class Controller( FeatureTracker):
 
         self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
-        self.ids_int = [i for i in self.ids]
+        self.ids_int = [i  for i in self.ids]
         self.err_int = np.zeros(self.points.shape)
 
 
@@ -729,7 +740,7 @@ class Controller( FeatureTracker):
 
         self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
-        self.ids_int = [i for i in self.ids]
+        self.ids_int = [i  for i in self.ids]
         self.err_int = np.zeros(self.points.shape)
 
         self.int_act = False
@@ -766,7 +777,8 @@ class Controller( FeatureTracker):
 
 
     def control_loop(self):
-
+        t = self.get_clock().now().nanoseconds * 1e-9
+        # self.get_logger().info(f"time {self.label}= {t}")
         #   Publish descriptor messages
         self.send_points()
         #   Preprocess matching points image

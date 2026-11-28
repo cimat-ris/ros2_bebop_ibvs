@@ -881,8 +881,7 @@ class FeatureTracker(ImageProc):
         super().declare_parameter('flann_ratio', 0.7)
         super().declare_parameter('detect_threshold', 12)
         super().declare_parameter('matcher_threshold', 12)
-
-
+        super().declare_parameter('frame', [0])
 
 
         self.nfeatures = super().get_parameter('nfeatures').value
@@ -894,12 +893,18 @@ class FeatureTracker(ImageProc):
         self.flann_ratio = super().get_parameter('flann_ratio').value
         self.detect_threshold = super().get_parameter('detect_threshold').value
         self.matcher_threshold = super().get_parameter('matcher_threshold').value
+        self.frame = super().get_parameter('frame').value
 
         self.p = np.zeros((2,2), dtype = np.float32)
         self.points = None
         self.desc_self = None
         self.reset_tracking = False
         self.first_track = True
+        self.fOffset = 0
+        self.prev_reset = False
+
+        if len( self.frame ) != 4:
+            self.frame = None
 
         #   TODO Expand using defaults in docs
 
@@ -982,9 +987,10 @@ class FeatureTracker(ImageProc):
         if px is None:
 
             #   RANSAC FILTER
-            _, _mask = cv2.findHomography(100.*_delta_i,
-                                        100.*_delta_j,
-                                        cv2.RANSAC)
+            _, _mask = cv2.findHomography(_delta_i * np.array(self.f),
+                                        _delta_j * np.array(self.f),
+                                        cv2.RANSAC,
+                                        ransacReprojThreshold = 10)
 
         else:
             p_px = np.float32([
@@ -1091,15 +1097,38 @@ class FeatureTracker(ImageProc):
         #   Detect if no enough
         if any ([self.p.shape[0] < self.detect_threshold,
                                     self.reset_tracking]):
-            super().get_logger().info("Reseting tracking.")
-            self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
-            if len(self.kp) <4:
+            if not self.prev_reset:
+                super().get_logger().info("Reseting tracking.")
+                self.prev_reset = True
+            _kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
+            if len(_kp) <4:
                 return
-            self.p = np.float32([k.pt for k in self.kp  ])
-            self.ids = [i for i in range(self.p.shape[0])]
+            if self.frame is None:
+                self.p = np.float32([k.pt for k in _kp  ])
+                self.kp = _kp
+            else:
+                p = []
+                self.kp = []
+                select = [False for i in range(len(_kp))]
+                for i, k in enumerate(_kp ):
+                    OutOfFrame = any( [k.pt[0] < self.frame[0],
+                                       k.pt[1] < self.frame[1],
+                                       k.pt[0] > self.frame[2],
+                                       k.pt[1] > self.frame[3]] )
+                    if not OutOfFrame:
+                        p.append(k.pt)
+                        self.kp.append(_kp)
+                        select[i] = True
+                if len(p) <4:
+                    return
+                # self.get_logger().info(str(p))
+                self.p = np.float32(p)
+                self.desc_self = self.desc_self[select]
+            self.ids = [i + self.fOffset for i in range(self.p.shape[0])]
             self.reset_tracking = False
             self.first_track = True
             self.points = self.normalize(self.p.astype(float).T)
+            self.fOffset += self.nfeatures
             return
 
         # Tracking
@@ -1110,16 +1139,39 @@ class FeatureTracker(ImageProc):
         self.prev_image = gray_image.copy()
 
         if status is None:
-            #   Reset if unable to track
-            super().get_logger().info("Reseting tracking.")
-            self.kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
-            if len(self.kp) <4:
+            if not self.prev_reset:
+                super().get_logger().info("Reseting tracking.")
+                self.prev_reset = True
+
+            _kp, self.desc_self = self.orb.detectAndCompute(gray_image, None)
+            if len(_kp) <4:
                 return
-            self.p = np.float32([k.pt for k in self.kp  ])
-            self.ids = [i for i in range(self.p.shape[0])]
-            self.reset_tracking = False
+            if self.frame is None:
+                self.p = np.float32([k.pt for k in _kp  ])
+                self.kp = _kp
+            else:
+                p = []
+                self.kp = []
+                select = [False for i in range(len(_kp))]
+                for i, k in enumerate(_kp ):
+                    OutOfFrame = any( [k.pt[0] < self.frame[0],
+                                       k.pt[1] < self.frame[1],
+                                       k.pt[0] > self.frame[2],
+                                       k.pt[1] > self.frame[3]] )
+                    if not OutOfFrame:
+                        p.append(k.pt)
+                        self.kp.append(_kp)
+                        select[i] = True
+                if len(p) <4:
+                    return
+                # self.get_logger().info(str(p))
+                self.p = np.float32(p)
+                self.desc_self = self.desc_self[select]
+            self.ids = [i + self.fOffset for i in range(self.p.shape[0])]
+            # self.reset_tracking = False
             self.first_track = True
             self.points = self.normalize(self.p.astype(float).T)
+            self.fOffset += self.nfeatures
 
         else:
             status = status.reshape(-1)
@@ -1129,6 +1181,8 @@ class FeatureTracker(ImageProc):
                     if err[0][i] > .5:
                         status[i] = 0
                 self.first_track = False
+                super().get_logger().info(f"Tracking... {self.p.shape[0]} features")
+                self.prev_reset = False
 
             self.p = new_pts[status == 1]
             _kp = []
@@ -1235,7 +1289,8 @@ class FeatureMatcher(ImageProc):
         if not enable_ransac:
             return _delta_i, _delta_j, idx
 
-        _, _mask = cv2.findHomography(10.*_delta_i,10.* _delta_j, cv2.RANSAC)
+        _, _mask = cv2.findHomography(_delta_i * np.array(self.f),
+                                      _delta_j * np.array(self.f), cv2.RANSAC)
         _mask = _mask.reshape(-1)
 
         if _mask.sum() <= 4:

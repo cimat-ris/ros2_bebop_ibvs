@@ -452,7 +452,7 @@ class Controller( FeatureTracker):
         if self.error.shape[1] != self.err_int.shape[1]:
             self.get_logger().info(str(self.ids_int))
             self.get_logger().info(str(self.ids))
-            self.ids_int = [i for i in self.ids]
+            self.ids_int = [i  for i in self.ids]
             self.err_int = np.zeros(self.points.shape)
             self.get_logger().warning("Integral misshape")
 
